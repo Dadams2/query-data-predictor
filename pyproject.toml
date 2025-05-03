@@ -1,0 +1,29 @@
+[project]
+name = "query-data-predictor"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "David Adams", email = "david@dadams2.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "duckdb>=1.2.2",
+    "pandas>=2.2.3",
+]
+
+[project.scripts]
+query-data-predictor = "query_data_predictor:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "ipykernel>=6.29.5",
+    "mypy>=1.15.0",
+    "pytest>=8.3.5",
+    "pytest-cov>=6.1.1",
+    "ruff>=0.11.8",
+]
