@@ -30,7 +30,8 @@ class TestDataLoader:
         sessions = data_loader.get_sessions()
         assert isinstance(sessions, np.ndarray)
         assert len(sessions) > 0
-        assert isinstance(sessions[0], str)
+        assert isinstance(sessions[0], np.int64)
+        assert sessions[0] == 28
     
     def test_get_queries_for_session(self, data_loader):
         """Test retrieving statement IDs for a specific session."""
@@ -43,9 +44,10 @@ class TestDataLoader:
         assert isinstance(statements, np.ndarray)
         assert len(statements) > 0
         assert isinstance(statements[0], str)
+        assert statements[0] == "SELECT * from dbo.fRegionsContainingPointEq(135.76428223, 49.32302094,'RUN', 0.025)"
     
     def test_get_queries_for_nonexistent_session(self, data_loader):
         """Test retrieving statement IDs for a session that doesn't exist."""
-        statements = data_loader.get_queries_for_session("nonexistent_session")
+        statements = data_loader.get_queries_for_session(99999999999)
         assert isinstance(statements, np.ndarray)
         assert len(statements) == 0
