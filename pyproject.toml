@@ -11,6 +11,7 @@ dependencies = [
     "dotenv>=0.9.9",
     "duckdb>=1.2.2",
     "matplotlib>=3.10.1",
+    "mlxtend>=0.23.4",
     "numexpr>=2.10.2",
     "pandas>=2.2.3",
     "polars>=1.29.0",
