@@ -122,9 +122,13 @@ class Discretizer:
         if not isinstance(df, pl.DataFrame):
             df = pl.from_pandas(df)
             
+        # Create a function that creates a lambda with the column name properly bound
+        def create_mapper(col_name):
+            return lambda x: f"{col_name}_{x}"
+        
         # Create expressions for each column to prepend the column name
         expressions = [
-            pl.col(column).map_elements(lambda x: f"{column}_{x}").alias(column)
+            pl.col(column).map_elements(create_mapper(column)).alias(column)
             for column in df.columns
         ]
         

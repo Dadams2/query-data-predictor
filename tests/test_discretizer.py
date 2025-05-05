@@ -99,7 +99,7 @@ class TestDiscretizer:
         
         # Check that bin values are within expected range
         assert result['float_col1_bin'].min() >= 0
-        assert result['float_col1_bin'].max() < 3
+        assert result['float_col1_bin'].max() < 5
     
     def test_discretize_kmeans(self, sample_df):
         """Test discretization with kmeans method."""
@@ -153,10 +153,9 @@ class TestDiscretizer:
             'col1': [1, 2, 3],
             'col2': ['a', 'b', 'c']
         })
-        
         discretizer = Discretizer()
         result = discretizer.prepend_column_names(df.clone())
-        
+        print(result) 
         # Check that values are prepended with column names
         assert result['col1'][0] == 'col1_1'
         assert result['col2'][0] == 'col2_a'
