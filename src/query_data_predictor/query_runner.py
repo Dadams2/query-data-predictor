@@ -35,7 +35,7 @@ class QueryRunner:
             df = self.execute_query(query)
             results.append(df)
         return results
-        
+
     def __enter__(self):
         self.connect()
         return self

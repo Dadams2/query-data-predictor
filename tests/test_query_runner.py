@@ -19,12 +19,7 @@ DB_PORT = os.getenv("PG_PORT", "5432")
 @pytest.fixture
 def query_runner():
     """Create and return a QueryRunner instance with connection params from env vars."""
-    runner = QueryRunner(
-        dbname=DB_NAME,
-        user=DB_USER,
-        host=DB_HOST,
-        port=DB_PORT
-    )
+    runner = QueryRunner(dbname=DB_NAME, user=DB_USER, host=DB_HOST, port=DB_PORT)
     return runner
 
 
@@ -45,14 +40,14 @@ def test_execute_query(query_runner):
         query_runner.connect()
         # Simple test query that should work on any PostgreSQL database
         df = query_runner.execute_query("SELECT 1 as test_col")
-        
+
         assert isinstance(df, pl.DataFrame)
         assert df.shape == (1, 1)
         assert df.columns == ["test_col"]
         assert df[0, 0] == 1
     finally:
         query_runner.disconnect()
-         
+
 
 def test_sdss_quewry(query_runner):
     """Test executing a simple query."""
@@ -60,7 +55,7 @@ def test_sdss_quewry(query_runner):
         query_runner.connect()
         # Simple test query that should work on any PostgreSQL database
         df = query_runner.execute_query(TEST_QUERY)
-        
+
         assert isinstance(df, pl.DataFrame)
         assert df.shape == (9, 2)
         assert df.columns == ["bestobjid", "z"]
@@ -76,9 +71,9 @@ def test_execute_queries(query_runner):
             "SELECT 1 as test_col",
             "SELECT 2 as test_col",
         ]
-        
+
         results = query_runner.execute_queries(queries)
-        
+
         assert len(results) == 2
         assert all(isinstance(df, pl.DataFrame) for df in results)
         assert results[0][0, 0] == 1
@@ -90,19 +85,16 @@ def test_execute_queries(query_runner):
 def test_context_manager():
     """Test using the QueryRunner as a context manager."""
     with QueryRunner(
-        dbname=DB_NAME,
-        user=DB_USER,
-        host=DB_HOST,
-        port=DB_PORT
+        dbname=DB_NAME, user=DB_USER, host=DB_HOST, port=DB_PORT
     ) as runner:
         # Connection should be established
         assert runner.conn is not None
         assert runner.cursor is not None
-        
+
         # Execute a simple query
         df = runner.execute_query("SELECT 1 as test_col")
         assert isinstance(df, pl.DataFrame)
         assert df.shape == (1, 1)
-    
+
     # Connection should be closed after exiting context
     assert runner.conn is None or runner.conn.closed == 1

@@ -1,9 +1,10 @@
-import os 
+import os
 import pandas as pd
 import numpy as np
 
-SESSION_ID = 'session_id'
-STATEMENT = 'statement'
+SESSION_ID = "session_id"
+STATEMENT = "statement"
+
 
 class SDSSCSVImporter:
     """
@@ -22,7 +23,7 @@ class SDSSCSVImporter:
             raise FileNotFoundError(f"CSV file not found: {self.file_path}")
 
         # Read the CSV file into a DataFrame
-        return pd.read_csv(self.file_path, sep='$')
+        return pd.read_csv(self.file_path, sep="$")
 
     def get_sessions(self) -> np.ndarray:
         """
@@ -33,7 +34,6 @@ class SDSSCSVImporter:
 
         # Extract unique session IDs
         return self.data[SESSION_ID].unique()
-
 
     def get_queries_for_session(self, session_id: str) -> np.ndarray:
         """
@@ -46,6 +46,4 @@ class SDSSCSVImporter:
         session_data = self.data[self.data[SESSION_ID] == session_id]
 
         # Extract statement IDs
-        return session_data['statement'].to_numpy()
-        
-
+        return session_data["statement"].to_numpy()
