@@ -71,7 +71,7 @@ class DatasetCreator:
         features = {
             'query_type': query_type,
             'query_length': len(query),
-            'token_count': len(sqlparse.sql.tokenize(query)),
+            'token_count': len(parsed.tokens),
         }
         
         if query_type == 'SELECT':
@@ -249,42 +249,42 @@ class DatasetCreator:
         
         return datasets_info
     
-    def prepare_train_test_split(self, dataset: pl.DataFrame, test_size: float = 0.2, random_state: int = 42):
-        """
-        Prepare training and test datasets for classification.
+    # def prepare_train_test_split(self, dataset: pl.DataFrame, test_size: float = 0.2, random_state: int = 42):
+    #     """
+    #     Prepare training and test datasets for classification.
         
-        Args:
-            dataset: Dataset DataFrame (Polars)
-            test_size: Proportion of data to use for testing
-            random_state: Random seed for reproducibility
+    #     Args:
+    #         dataset: Dataset DataFrame (Polars)
+    #         test_size: Proportion of data to use for testing
+    #         random_state: Random seed for reproducibility
             
-        Returns:
-            X_train, X_test, y_train, y_test
-        """
-        # Text features from the query
-        queries = dataset.get_column('current_query').to_list()
-        vectorizer = TfidfVectorizer(max_features=100)
-        query_vectors = vectorizer.fit_transform(queries)
+    #     Returns:
+    #         X_train, X_test, y_train, y_test
+    #     """
+    #     # Text features from the query
+    #     queries = dataset.get_column('current_query').to_list()
+    #     vectorizer = TfidfVectorizer(max_features=100)
+    #     query_vectors = vectorizer.fit_transform(queries)
         
-        # Create feature matrix
-        feature_cols = [col for col in dataset.columns if col not in 
-                       ['session_id', 'current_query', 'next_query', 'next_result_signature']]
+    #     # Create feature matrix
+    #     feature_cols = [col for col in dataset.columns if col not in 
+    #                    ['session_id', 'current_query', 'next_query', 'next_result_signature']]
         
-        # Convert Polars DataFrame to pandas for sklearn compatibility
-        X_features_pd = dataset.select(feature_cols).to_pandas()
+    #     # Convert Polars DataFrame to pandas for sklearn compatibility
+    #     X_features_pd = dataset.select(feature_cols).to_pandas()
         
-        # Convert categorical features to numeric
-        for col in X_features_pd.select_dtypes(include=['object']):
-            X_features_pd[col] = X_features_pd[col].astype('category').cat.codes
+    #     # Convert categorical features to numeric
+    #     for col in X_features_pd.select_dtypes(include=['object']):
+    #         X_features_pd[col] = X_features_pd[col].astype('category').cat.codes
         
-        # Combine text features and tabular features
-        X = np.hstack([query_vectors.toarray(), X_features_pd.values])
+    #     # Combine text features and tabular features
+    #     X = np.hstack([query_vectors.toarray(), X_features_pd.values])
         
-        # Target is the next result signature
-        y = dataset.get_column('next_result_signature').to_list()
+    #     # Target is the next result signature
+    #     y = dataset.get_column('next_result_signature').to_list()
         
-        # Split into train and test sets
-        return train_test_split(X, y, test_size=test_size, random_state=random_state)
+    #     # Split into train and test sets
+    #     return train_test_split(X, y, test_size=test_size, random_state=random_state)
     
     def close(self):
         """Close database connections."""

@@ -84,7 +84,7 @@ class DataLoader:
             with temp_conn.cursor() as cur:
                 # Check if the target database exists
                 cur.execute(
-                    "SELECT 1 FROM pg_database WHERE datname = %s", (target_dbname,)
+                    f"SELECT 1 FROM pg_database WHERE datname = '{target_dbname}'",
                 )
                 exists = cur.fetchone()
 
