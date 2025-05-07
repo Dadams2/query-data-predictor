@@ -1,6 +1,7 @@
 import os
 import pytest
 import polars as pl
+import hashlib
 from dotenv import load_dotenv
 from query_data_predictor.query_runner import QueryRunner
 from query_data_predictor.dataset_creator import DatasetCreator
@@ -12,7 +13,7 @@ load_dotenv()
 
 TEST_QUERY = "SELECT bestobjID,z FROM SpecObj WHERE (SpecClass=3 or SpecClass=4) and z between 1.95 and 2 and zConf>0.99"
 SAMPLE_DATA_PATH = Path(__file__).parent.parent / "data" / "sdss_joined_sample.json"
-OUTPUT_DIR = Path(__file__).parent.parent / "data" / "test_output"
+OUTPUT_DIR = Path(__file__).parent.parent / "data" / "datasets"
 
 # Get database connection parameters from environment variables
 DB_NAME = os.getenv("PG_DATA")
@@ -108,7 +109,7 @@ class TestDatasetCreator:
         dataset_creator.output_dir = str(tmp_path)
         
         # Mock get_sessions to return a single session
-        monkeypatch.setattr(dataset_creator.data_loader, "get_sessions", lambda: ["1"])
+        monkeypatch.setattr(dataset_creator.data_loader, "get_sessions", lambda: [1])
         
         # Mock get_queries_for_session to return two test queries
         test_queries = [TEST_QUERY, TEST_QUERY]  # Using same query twice for simplicity
@@ -126,6 +127,19 @@ class TestDatasetCreator:
         assert os.path.exists(dataset_info[1]["file_path"])
         assert dataset_info[1]["samples"] > 0
     
+    def test_full_build(self, dataset_creator):
+        dataset_info = dataset_creator.build_dataset(session_id=28)
+        assert len(dataset_info) == 5
+
+        # check number of files created is equal to number of sessions
+        assert len(dataset_info) == len(dataset_creator.data_loader.get_sessions())
+        file = dataset_info[1]["file_path"]
+        assert os.path.exists(file)
+        md5 = hashlib.md5(open(file, "rb").read()).hexdigest()
+        assert md5 == "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
+
+
+
     # def test_prepare_train_test_split(self, dataset_creator):
     #     """Test preparation of train/test split."""
     #     # Create a sample dataset

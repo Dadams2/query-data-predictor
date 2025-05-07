@@ -136,7 +136,7 @@ class DataLoader:
         except Exception as e:
             raise Exception(f"Error loading data into PostgreSQL: {e}")
 
-    def get_sessions(self) -> List[str]:
+    def get_sessions(self) -> List[int]:
         """Return all unique session IDs from the data as a numpy array."""
         if not self.conn:
             raise ConnectionError("Database connection not established")
@@ -150,7 +150,6 @@ class DataLoader:
             '''
             )
             result = cur.fetchall()
-
         # Convert the result to a numpy array of session IDs
         return np.array([row[0] for row in result])
 

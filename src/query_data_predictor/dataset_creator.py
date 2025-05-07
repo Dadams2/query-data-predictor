@@ -167,15 +167,12 @@ class DatasetCreator:
         
         try:
             # Get all sessions or filter for a specific one
+            sessions = self.data_loader.get_sessions()
             if session_id is not None:
-                # Convert session IDs to integers for comparison
-                available_sessions = [int(s) for s in self.data_loader.get_sessions()]
-                sessions = [str(session_id)] if session_id in available_sessions else None
-                if not sessions:
-                    print(f"Session {session_id} not found")
-                    return datasets_info
-            else:
-                sessions = self.data_loader.get_sessions()
+                sessions = [session_id] if session_id in sessions else None
+            if not sessions:
+                print(f"Session {session_id} not found")
+                return datasets_info
             
             for current_session_id in sessions:
                 queries = self.data_loader.get_queries_for_session(current_session_id)
@@ -183,14 +180,13 @@ class DatasetCreator:
                 dataset_rows = []
                 
                 # Process each query and its next query
-                for i in range(len(queries) - 1):
+                for i in range(len(queries)):
                     current_query = queries[i]
-                    next_query = queries[i+1]
                     
                     # Skip if current or next query is empty or not a SELECT
-                    if not current_query or not next_query:
+                    if not current_query:
                         continue
-                    if not current_query.upper().startswith('SELECT') or not next_query.upper().startswith('SELECT'):
+                    if not current_query.upper().startswith('SELECT'):
                         continue
                     
                     # Execute current query using QueryRunner
@@ -201,26 +197,15 @@ class DatasetCreator:
                         print(f"Error executing current query: {e}")
                         continue
                     
-                    # Execute next query using QueryRunner
-                    try:
-                        next_results = self.query_runner.execute_query(next_query)
-                        next_columns = next_results.columns
-                    except Exception as e:
-                        print(f"Error executing next query: {e}")
-                        continue
-                    
                     # Extract features and target
                     query_features = self._extract_query_features(current_query)
                     result_features = self._extract_result_features(curr_columns, curr_results)
-                    next_result_signature = self._get_result_signature(next_columns, next_results)
                     
                     # Combine all features
                     all_features = {
                         'session_id': session_id,
                         'query_position': i,
                         'current_query': current_query,
-                        'next_query': next_query,
-                        'next_result_signature': next_result_signature
                     }
                     all_features.update(query_features)
                     all_features.update(result_features)
