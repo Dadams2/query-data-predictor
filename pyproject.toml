@@ -19,6 +19,7 @@ dependencies = [
     "scikit-learn>=1.6.1",
     "seaborn>=0.13.2",
     "sqlalchemy>=2.0.40",
+    "sqlparse>=0.5.3",
 ]
 
 [project.scripts]
