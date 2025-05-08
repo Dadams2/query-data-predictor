@@ -1,7 +1,7 @@
 from pathlib import Path
 import pytest
 import numpy as np
-from query_data_predictor.sdss_json_importer import DataLoader
+from query_data_predictor.sdss_json_importer import JsonDataImporter
 
 # Path to the sample data file
 SAMPLE_DATA_PATH = Path(__file__).parent.parent / "data" / "sdss_joined_sample.json"
@@ -11,20 +11,20 @@ class TestDataLoader:
     @pytest.fixture
     def data_loader(self):
         """Fixture to create and cleanup a DataLoader instance."""
-        loader = DataLoader(SAMPLE_DATA_PATH)
+        loader = JsonDataImporter(SAMPLE_DATA_PATH)
         yield loader
         loader.close()
 
     def test_init_with_valid_file(self):
         """Test initialization with a valid JSON file."""
-        loader = DataLoader(SAMPLE_DATA_PATH)
+        loader = JsonDataImporter(SAMPLE_DATA_PATH)
         assert loader is not None
         loader.close()
 
     def test_init_with_invalid_file(self):
         """Test initialization with an invalid JSON file path."""
         with pytest.raises(FileNotFoundError):
-            DataLoader("nonexistent_file.json")
+            JsonDataImporter("nonexistent_file.json")
 
     def test_get_sessions(self, data_loader):
         """Test retrieving session IDs."""

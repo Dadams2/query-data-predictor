@@ -11,7 +11,7 @@ SESSION_ID_COLUMN = "sessionID"
 STATEMENT_COLUMN = "statement"
 
 
-class DataLoader:
+class JsonDataImporter:
     def __init__(
         self, json_file_path: str, db_params: Optional[Dict[str, Any]] = None
     ) -> None:

@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from query_data_predictor.query_runner import QueryRunner
 from query_data_predictor.dataset_creator import DatasetCreator
 from pathlib import Path
-from query_data_predictor.sdss_json_importer import DataLoader
+from query_data_predictor.sdss_json_importer import JsonDataImporter
 from query_data_predictor.sdss_csv_importer import SDSSCSVImporter
 
 # Load environment variables from .env file
@@ -34,7 +34,7 @@ class TestDatasetCreator:
     @pytest.fixture
     def data_loader(self):
         """Fixture to create and cleanup a DataLoader instance."""
-        loader = DataLoader(SAMPLE_DATA_PATH)
+        loader = JsonDataImporter(SAMPLE_DATA_PATH)
         yield loader
         loader.close()
 
