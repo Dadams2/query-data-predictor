@@ -170,13 +170,13 @@ class DatasetCreator:
             sessions = self.data_loader.get_sessions()
             if session_id is not None:
                 sessions = [session_id] if session_id in sessions else None
-            if not sessions:
+            if sessions is None:
                 print(f"Session {session_id} not found")
                 return datasets_info
-            
+
             for current_session_id in sessions:
                 queries = self.data_loader.get_queries_for_session(current_session_id)
-                
+                print(f"Processing session {current_session_id} with {len(queries)} queries")
                 dataset_rows = []
                 
                 # Process each query and its next query
@@ -194,6 +194,7 @@ class DatasetCreator:
                         curr_results = self.query_runner.execute_query(current_query)
                         curr_columns = curr_results.columns
                     except Exception as e:
+                        # pass over errors for now
                         print(f"Error executing current query: {e}")
                         continue
                     
@@ -203,7 +204,7 @@ class DatasetCreator:
                     
                     # Combine all features
                     all_features = {
-                        'session_id': session_id,
+                        'session_id': current_session_id,
                         'query_position': i,
                         'current_query': current_query,
                     }
@@ -217,16 +218,16 @@ class DatasetCreator:
                     dataset = pl.DataFrame(dataset_rows)
                     
                     # Save dataset for this session
-                    output_path = os.path.join(self.output_dir, f"{self.dataset_prefix}_session_{session_id}.pkl")
+                    output_path = os.path.join(self.output_dir, f"{self.dataset_prefix}_session_{current_session_id}.pkl")
                     with open(output_path, 'wb') as f:
                         pickle.dump(dataset, f)
                     
-                    datasets_info[session_id] = {
+                    datasets_info[current_session_id] = {
                         'file_path': output_path,
                         'samples': len(dataset_rows)
                     }
                     
-                    print(f"Dataset for session {session_id} saved to {output_path} with {len(dataset_rows)} samples")
+                    print(f"Dataset for session {current_session_id} saved to {output_path} with {len(dataset_rows)} samples")
         
         finally:
             # Disconnect QueryRunner
@@ -278,31 +279,3 @@ class DatasetCreator:
         
         if hasattr(self, 'data_loader') and self.data_loader:
             self.data_loader.close()
-
-if __name__ == "__main__":
-    # Example usage
-    creator = DatasetCreator(
-        json_path="path/to/query_data.json",
-        output_dir="datasets",
-        dataset_prefix="query_prediction"
-    )
-    
-    try:
-        # Build datasets, one per session
-        dataset_info = creator.build_dataset()
-        
-        # Example of loading a dataset for a session
-        if dataset_info:
-            session_id = list(dataset_info.keys())[0]
-            with open(dataset_info[session_id]['file_path'], 'rb') as f:
-                dataset = pickle.load(f)
-            
-            # Create train/test split
-            X_train, X_test, y_train, y_test = creator.prepare_train_test_split(dataset)
-            
-            print(f"Dataset for session {session_id} has {dataset_info[session_id]['samples']} samples")
-            print(f"Training set: {X_train.shape[0]} samples")
-            print(f"Test set: {X_test.shape[0]} samples")
-            print(f"Number of classes: {len(set(y_train))}")
-    finally:
-        creator.close()

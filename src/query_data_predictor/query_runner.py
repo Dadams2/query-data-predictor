@@ -11,6 +11,7 @@ class QueryRunner:
     def connect(self):
         """Connect to the PostgreSQL database."""
         self.conn = psycopg2.connect(**self.db_params)
+        self.conn.autocommit = True
         self.cursor = self.conn.cursor()
 
     def disconnect(self):
@@ -25,7 +26,7 @@ class QueryRunner:
         self.cursor.execute(query)
         result = self.cursor.fetchall()
         columns = [desc[0] for desc in self.cursor.description]
-        df = pl.DataFrame(result, schema=columns)
+        df = pl.DataFrame(result, schema=columns, strict=False)
         return df
 
     def execute_queries(self, queries):

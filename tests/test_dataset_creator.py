@@ -7,12 +7,14 @@ from query_data_predictor.query_runner import QueryRunner
 from query_data_predictor.dataset_creator import DatasetCreator
 from pathlib import Path
 from query_data_predictor.sdss_json_importer import DataLoader
+from query_data_predictor.sdss_csv_importer import SDSSCSVImporter
 
 # Load environment variables from .env file
 load_dotenv()
 
 TEST_QUERY = "SELECT bestobjID,z FROM SpecObj WHERE (SpecClass=3 or SpecClass=4) and z between 1.95 and 2 and zConf>0.99"
 SAMPLE_DATA_PATH = Path(__file__).parent.parent / "data" / "sdss_joined_sample.json"
+SAMPLE_CSV_PATH = Path(__file__).parent.parent / "data" / "SQL_workload1.csv"
 OUTPUT_DIR = Path(__file__).parent.parent / "data" / "datasets"
 
 # Get database connection parameters from environment variables
@@ -127,12 +129,16 @@ class TestDatasetCreator:
         assert os.path.exists(dataset_info[1]["file_path"])
         assert dataset_info[1]["samples"] > 0
     
-    def test_full_build(self, dataset_creator):
-        dataset_info = dataset_creator.build_dataset(session_id=28)
-        assert len(dataset_info) == 5
+    # TODO fix this test with json dataset
+    def test_full_build(self, query_runner):
+
+        loader = SDSSCSVImporter(SAMPLE_CSV_PATH)
+        creator = DatasetCreator(data_loader=loader, query_runner=query_runner, output_dir=OUTPUT_DIR)
+        dataset_info = creator.build_dataset()
+        assert len(dataset_info) == 13 
 
         # check number of files created is equal to number of sessions
-        assert len(dataset_info) == len(dataset_creator.data_loader.get_sessions())
+        assert len(dataset_info) == len(creator.data_loader.get_sessions())
         file = dataset_info[1]["file_path"]
         assert os.path.exists(file)
         md5 = hashlib.md5(open(file, "rb").read()).hexdigest()
