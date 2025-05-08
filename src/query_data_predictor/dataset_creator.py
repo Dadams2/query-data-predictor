@@ -7,7 +7,7 @@ from sklearn.model_selection import train_test_split
 import sqlparse
 import pickle
 
-from query_data_predictor.sdss_json_importer import DataLoader
+from query_data_predictor.sdss_json_importer import JsonDataImporter
 from query_data_predictor.query_runner import QueryRunner
 
 class DatasetCreator:
@@ -18,7 +18,7 @@ class DatasetCreator:
     
     def __init__(
         self, 
-        data_loader: DataLoader = None, 
+        data_loader: JsonDataImporter = None, 
         query_runner: QueryRunner = None,
         json_path: str = None, 
         output_dir: str = "datasets", 
@@ -36,7 +36,7 @@ class DatasetCreator:
         if data_loader:
             self.data_loader = data_loader
         elif json_path:
-            self.data_loader = DataLoader(json_path)
+            self.data_loader = JsonDataImporter(json_path)
         else:
             raise ValueError("Either data_loader or json_path must be provided")
         
