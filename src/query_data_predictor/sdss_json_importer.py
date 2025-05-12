@@ -5,13 +5,14 @@ import pandas as pd
 from typing import Dict, Any, Optional, List
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
+from .importer import DataImporter
 
 # Constants
 SESSION_ID_COLUMN = "sessionID"
 STATEMENT_COLUMN = "statement"
 
 
-class JsonDataImporter:
+class JsonDataImporter(DataImporter):
     def __init__(
         self, json_file_path: str, db_params: Optional[Dict[str, Any]] = None
     ) -> None:

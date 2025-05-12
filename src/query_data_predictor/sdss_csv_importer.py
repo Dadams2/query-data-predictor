@@ -1,21 +1,22 @@
 import os
 import pandas as pd
 import numpy as np
+from query_data_predictor.importer import DataImporter
 
 SESSION_ID = "session_id"
 STATEMENT = "statement"
 
 
-class SDSSCSVImporter:
+class SDSSCSVImporter(DataImporter):
     """
     Class to import SDSS CSV files and convert them to a list of dictionaries.
     """
 
     def __init__(self, file_path):
         self.file_path = file_path
-        self.data = self._load_data()
+        self.data = self.load_data()
 
-    def _load_data(self) -> list:
+    def load_data(self) -> list:
         """
         Load data from the CSV file and return it as a list of dictionaries.
         """
