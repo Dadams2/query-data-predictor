@@ -1,5 +1,3 @@
-import pandas as pd
-from mlxtend.preprocessing import TransactionEncoder
 from mlxtend.frequent_patterns import fpgrowth
 from query_data_predictor.association_interestingness import AssociationEvaluator
 import pytest

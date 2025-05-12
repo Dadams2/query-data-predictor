@@ -1,9 +1,6 @@
 import os
-import numpy as np
 import polars as pl
-from typing import List, Dict, Tuple, Optional, Any
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.model_selection import train_test_split
+from typing import List, Dict, Optional, Any
 import sqlparse
 import pickle
 

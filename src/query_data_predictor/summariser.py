@@ -1,6 +1,5 @@
 from typing import Any, Dict, List
 import pandas as pd
-from itertools import combinations, product
 
 def convert_itemset_to_summary(itemset: tuple, attributes: List[str]) -> Dict[str, str]:
     """

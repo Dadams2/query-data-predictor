@@ -1,8 +1,5 @@
-from query_data_predictor.summariser import get_candidate_summaries, bus_summarization_with_candidates, summary_loss, transactions_covered, append_count_to_summaries
+from query_data_predictor.summariser import get_candidate_summaries, bus_summarization_with_candidates, summary_loss, append_count_to_summaries
 from mlxtend.frequent_patterns import fpgrowth
-from mlxtend.preprocessing import TransactionEncoder
-import pytest
-import pandas as pd
 from fixtures import *
 
 

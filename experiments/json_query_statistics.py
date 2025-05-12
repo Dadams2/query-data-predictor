@@ -2,7 +2,6 @@ from query_data_predictor.sdss_json_importer import JsonDataImporter
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-import numpy as np
 from pathlib import Path
 import os
 import datetime

@@ -4,7 +4,6 @@ import polars as pl
 import polars.testing as pl_testing
 import numpy as np
 import tempfile
-import pickle
 from query_data_predictor.discretizer import Discretizer
 
 class TestDiscretizer:

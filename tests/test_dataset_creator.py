@@ -1,13 +1,11 @@
 import os
 import pytest
 import polars as pl
-import hashlib
 from dotenv import load_dotenv
 from query_data_predictor.query_runner import QueryRunner
 from query_data_predictor.dataset_creator import DatasetCreator
 from pathlib import Path
 from query_data_predictor.sdss_json_importer import JsonDataImporter
-from query_data_predictor.sdss_csv_importer import SDSSCSVImporter
 
 # Load environment variables from .env file
 load_dotenv()
