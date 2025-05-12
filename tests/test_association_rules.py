@@ -3,6 +3,9 @@ from mlxtend.preprocessing import TransactionEncoder
 from mlxtend.frequent_patterns import fpgrowth
 from query_data_predictor.association_rules import association_rules
 
+# this file exists to test the association rules implementation against the mlxtend library
+# should it change
+
 
 dataset = [['Milk', 'Onion', 'Nutmeg', 'Kidney Beans', 'Eggs', 'Yogurt'],
            ['Dill', 'Onion', 'Nutmeg', 'Kidney Beans', 'Eggs', 'Yogurt'],

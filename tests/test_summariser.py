@@ -5,7 +5,7 @@ import pytest
 import pandas as pd
 
 #TODO : improve the test cases to cover all the edge cases
-SAMPLE_TRANSACTIONS = [
+COMPLEX_TRANSACTIONS = [
     {"specobjid": "specobjid_177834390330540032", "specclass": "specclass_3", "objid": "objid_587729233054400633", "primtarget": "primtarget_4", "z_bin": "z_bin_3", "zconf_bin": "zconf_bin_2"},
     {"specobjid": "specobjid_189656694588964864", "specclass": "specclass_3", "objid": "objid_587731185119723742", "primtarget": "primtarget_4", "z_bin": "z_bin_1", "zconf_bin": "zconf_bin_1"},
     {"specobjid": "specobjid_173613531499855872", "specclass": "specclass_3", "objid": "objid_588007003651440738", "primtarget": "primtarget_4", "z_bin": "z_bin_3", "zconf_bin": "zconf_bin_3"},
@@ -50,7 +50,7 @@ def simple_transactions():
 def complex_transactions():
     """Fixture to create and return a TransactionEncoder instance."""
     te = TransactionEncoder()
-    te_ary = te.fit(SAMPLE_TRANSACTIONS).transform(SAMPLE_TRANSACTIONS)
+    te_ary = te.fit(COMPLEX_TRANSACTIONS).transform(COMPLEX_TRANSACTIONS)
     df = pd.DataFrame(te_ary, columns=te.columns_)
     return df
 
@@ -86,6 +86,6 @@ def test_complex_final_summaries(complex_transactions):
 
     weights = {attr: 1 for attr in attributes}
     final_summaries = bus_summarization_with_candidates(transactions, weights, DESIRED_SIZE, summaries)
-    append_count_to_summaries(final_summaries, SAMPLE_TRANSACTIONS, attributes)
+    append_count_to_summaries(final_summaries, COMPLEX_TRANSACTIONS, attributes)
     print(final_summaries)
     assert final_summaries[0]['Count'] == 19 
