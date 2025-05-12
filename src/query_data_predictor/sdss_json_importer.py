@@ -29,7 +29,6 @@ class JsonDataImporter(DataImporter):
         self.db_params = db_params if db_params else self._load_db_params_from_env()
         self.conn: Optional[psycopg2.extensions.connection] = None
         self._connect_to_db()
-        self._load_data()
 
     def _load_db_params_from_env(self) -> Dict[str, Any]:
         """Load database parameters from environment variables (.env file)."""
@@ -105,7 +104,7 @@ class JsonDataImporter(DataImporter):
                 f"Could not connect to or create PostgreSQL database: {e}"
             )
 
-    def _load_data(self) -> None:
+    def load_data(self) -> None:
         """Load JSON data into PostgreSQL using pandas and psycopg2."""
         if not os.path.exists(self.json_file_path):
             raise FileNotFoundError(f"JSON file not found: {self.json_file_path}")

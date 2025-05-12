@@ -13,18 +13,20 @@ class TestSDSSCSVImporter:
     def csv_importer(self):
         """Fixture to create and cleanup a SDSSCSVImporter instance."""
         importer = SDSSCSVImporter(SAMPLE_DATA_PATH)
+        importer.load_data()
         yield importer
         # No close method in the CSV importer, so no cleanup needed
 
     def test_init_with_valid_file(self):
         """Test initialization with a valid CSV file."""
         importer = SDSSCSVImporter(SAMPLE_DATA_PATH)
+        importer.load_data()
         assert importer is not None
 
     def test_init_with_invalid_file(self):
         """Test initialization with an invalid CSV file path."""
         with pytest.raises(FileNotFoundError):
-            SDSSCSVImporter("nonexistent_file.csv")
+            SDSSCSVImporter("nonexistent_file.csv").load_data()
 
     def test_get_sessions(self, csv_importer):
         """Test retrieving session IDs."""

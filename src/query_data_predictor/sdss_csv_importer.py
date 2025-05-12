@@ -14,7 +14,6 @@ class SDSSCSVImporter(DataImporter):
 
     def __init__(self, file_path):
         self.file_path = file_path
-        self.data = self.load_data()
 
     def load_data(self) -> list:
         """
@@ -23,8 +22,9 @@ class SDSSCSVImporter(DataImporter):
         if not os.path.exists(self.file_path):
             raise FileNotFoundError(f"CSV file not found: {self.file_path}")
 
+        self.data = pd.read_csv(self.file_path, sep="$")
         # Read the CSV file into a DataFrame
-        return pd.read_csv(self.file_path, sep="$")
+        return self.data 
 
     def get_sessions(self) -> np.ndarray:
         """

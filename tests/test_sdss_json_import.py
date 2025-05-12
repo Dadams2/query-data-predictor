@@ -12,19 +12,21 @@ class TestDataLoader:
     def data_loader(self):
         """Fixture to create and cleanup a DataLoader instance."""
         loader = JsonDataImporter(SAMPLE_DATA_PATH)
+        loader.load_data()
         yield loader
         loader.close()
 
     def test_init_with_valid_file(self):
         """Test initialization with a valid JSON file."""
         loader = JsonDataImporter(SAMPLE_DATA_PATH)
+        loader.load_data()
         assert loader is not None
         loader.close()
 
     def test_init_with_invalid_file(self):
         """Test initialization with an invalid JSON file path."""
         with pytest.raises(FileNotFoundError):
-            JsonDataImporter("nonexistent_file.json")
+            JsonDataImporter("nonexistent_file.json").load_data()
 
     def test_get_sessions(self, data_loader):
         """Test retrieving session IDs."""
