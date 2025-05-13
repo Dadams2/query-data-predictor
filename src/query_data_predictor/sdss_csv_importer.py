@@ -38,7 +38,7 @@ class SDSSCSVImporter(DataImporter):
 
     def get_queries_for_session(self, session_id: str) -> np.ndarray:
         """
-        Return all statement IDs for a given session ID as a numpy array.
+        Return all statements for a given session ID as a numpy array.
         """
         if self.data is None:
             raise ValueError("No data loaded. Please check the file path.")
