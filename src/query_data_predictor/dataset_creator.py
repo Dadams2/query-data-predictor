@@ -1,11 +1,13 @@
 import os
 import polars as pl
+import pandas as pd
 from typing import List, Dict, Optional, Any
 import sqlparse
 import pickle
 
-from query_data_predictor.sdss_json_importer import JsonDataImporter
 from query_data_predictor.query_runner import QueryRunner
+from query_data_predictor.importer import DataImporter
+from query_data_predictor.sdss_json_importer import JsonDataImporter
 
 class DatasetCreator:
     """
@@ -15,7 +17,7 @@ class DatasetCreator:
     
     def __init__(
         self, 
-        data_loader: JsonDataImporter = None, 
+        data_loader: DataImporter = None, 
         query_runner: QueryRunner = None,
         json_path: str = None, 
         output_dir: str = "datasets", 
@@ -47,6 +49,8 @@ class DatasetCreator:
             # Initialize QueryRunner with default parameters
             raise ValueError("QueryRunner must be provided")
         self.query_runner = query_runner 
+        self.data_loader.load_data()
+        self.query_runner.connect()
     
     def _extract_query_features(self, query: str) -> Dict[str, Any]:
         """
@@ -149,19 +153,16 @@ class DatasetCreator:
     def build_dataset(self, session_id: Optional[int] = None):
         """
         Build datasets for training a query result prediction model.
-        
+
         Args:
             session_id: Optional. If provided, build dataset only for this session.
                         Otherwise, build datasets for all sessions.
-        
+
         Returns:
-            Dictionary mapping session_ids to dataset files
+            Pandas DataFrame containing metadata with columns 'session_id' and 'filepath'.
         """
-        datasets_info = {}
-        
-        # Connect QueryRunner
-        self.query_runner.connect()
-        
+        metadata_rows = []
+
         try:
             # Get all sessions or filter for a specific one
             sessions = self.data_loader.get_sessions()
@@ -169,23 +170,23 @@ class DatasetCreator:
                 sessions = [session_id] if session_id in sessions else None
             if sessions is None:
                 print(f"Session {session_id} not found")
-                return datasets_info
+                return pd.DataFrame(columns=['session_id', 'filepath'])
 
             for current_session_id in sessions:
                 queries = self.data_loader.get_queries_for_session(current_session_id)
                 print(f"Processing session {current_session_id} with {len(queries)} queries")
                 dataset_rows = []
-                
+
                 # Process each query and its next query
                 for i in range(len(queries)):
                     current_query = queries[i]
-                    
+
                     # Skip if current or next query is empty or not a SELECT
                     if not current_query:
                         continue
                     if not current_query.upper().startswith('SELECT'):
                         continue
-                    
+
                     # Execute current query using QueryRunner
                     try:
                         curr_results = self.query_runner.execute_query(current_query)
@@ -194,11 +195,11 @@ class DatasetCreator:
                         # pass over errors for now
                         print(f"Error executing current query: {e}")
                         continue
-                    
+
                     # Extract features and target
                     query_features = self._extract_query_features(current_query)
                     result_features = self._extract_result_features(curr_columns, curr_results)
-                    
+
                     # Combine all features
                     all_features = {
                         'session_id': current_session_id,
@@ -207,67 +208,39 @@ class DatasetCreator:
                     }
                     all_features.update(query_features)
                     all_features.update(result_features)
-                    
+
                     dataset_rows.append(all_features)
-                
+
                 if dataset_rows:
                     # Create dataset DataFrame with Polars
                     dataset = pl.DataFrame(dataset_rows)
-                    
+
                     # Save dataset for this session
                     output_path = os.path.join(self.output_dir, f"{self.dataset_prefix}_session_{current_session_id}.pkl")
                     with open(output_path, 'wb') as f:
                         pickle.dump(dataset, f)
-                    
-                    datasets_info[current_session_id] = {
-                        'file_path': output_path,
-                        'samples': len(dataset_rows)
-                    }
-                    
+
+                    # Add metadata row for the session
+                    metadata_rows.append({
+                        'session_id': current_session_id,
+                        'filepath': output_path
+                    })
+
                     print(f"Dataset for session {current_session_id} saved to {output_path} with {len(dataset_rows)} samples")
-        
+
         finally:
             # Disconnect QueryRunner
             self.query_runner.disconnect()
-        
-        return datasets_info
-    
-    # def prepare_train_test_split(self, dataset: pl.DataFrame, test_size: float = 0.2, random_state: int = 42):
-    #     """
-    #     Prepare training and test datasets for classification.
-        
-    #     Args:
-    #         dataset: Dataset DataFrame (Polars)
-    #         test_size: Proportion of data to use for testing
-    #         random_state: Random seed for reproducibility
-            
-    #     Returns:
-    #         X_train, X_test, y_train, y_test
-    #     """
-    #     # Text features from the query
-    #     queries = dataset.get_column('current_query').to_list()
-    #     vectorizer = TfidfVectorizer(max_features=100)
-    #     query_vectors = vectorizer.fit_transform(queries)
-        
-    #     # Create feature matrix
-    #     feature_cols = [col for col in dataset.columns if col not in 
-    #                    ['session_id', 'current_query', 'next_query', 'next_result_signature']]
-        
-    #     # Convert Polars DataFrame to pandas for sklearn compatibility
-    #     X_features_pd = dataset.select(feature_cols).to_pandas()
-        
-    #     # Convert categorical features to numeric
-    #     for col in X_features_pd.select_dtypes(include=['object']):
-    #         X_features_pd[col] = X_features_pd[col].astype('category').cat.codes
-        
-    #     # Combine text features and tabular features
-    #     X = np.hstack([query_vectors.toarray(), X_features_pd.values])
-        
-    #     # Target is the next result signature
-    #     y = dataset.get_column('next_result_signature').to_list()
-        
-    #     # Split into train and test sets
-    #     return train_test_split(X, y, test_size=test_size, random_state=random_state)
+
+        # Create metadata DataFrame
+        metadata_df = pd.DataFrame(metadata_rows)
+
+        # Save metadata to CSV
+        metadata_csv_path = os.path.join(self.output_dir, 'metadata.csv')
+        metadata_df.to_csv(metadata_csv_path, index=False)
+        print(f"Metadata saved to {metadata_csv_path}")
+
+        return metadata_df
     
     def close(self):
         """Close database connections."""

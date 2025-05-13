@@ -124,8 +124,7 @@ class TestDatasetCreator:
         
         # Check if dataset was created
         assert len(dataset_info) == 1
-        assert os.path.exists(dataset_info[1]["file_path"])
-        assert dataset_info[1]["samples"] > 0
+        assert os.path.exists(dataset_info["filepath"][0])
     
     # TODO fix this test with json dataset
     # def test_full_build(self, query_runner):
