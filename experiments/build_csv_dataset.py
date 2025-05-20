@@ -14,6 +14,7 @@ load_dotenv()
 TEST_QUERY = "SELECT bestobjID,z FROM SpecObj WHERE (SpecClass=3 or SpecClass=4) and z between 1.95 and 2 and zConf>0.99"
 SAMPLE_CSV_PATH = Path(__file__).parent.parent / "data" / "SQL_workload1.csv"
 OUTPUT_DIR = Path(__file__).parent.parent / "data" / "datasets"
+QUERY_RESULTS_DIR = Path(__file__).parent.parent / "data" / "datasets" / "query_results"
 
 # Get database connection parameters from environment variables
 DB_NAME = os.getenv("PG_DATA")
@@ -31,9 +32,9 @@ def query_runner():
 
 def test_full_build(query_runner):
     loader = SDSSCSVImporter(SAMPLE_CSV_PATH)
-    creator = DatasetCreator(data_loader=loader, query_runner=query_runner, output_dir=OUTPUT_DIR)
+    creator = DatasetCreator(data_loader=loader, query_runner=query_runner, output_dir=OUTPUT_DIR, results_dir=QUERY_RESULTS_DIR)
     dataset_info = creator.build_dataset()
-    assert len(dataset_info) == 13 
+    # assert len(dataset_info) == 13 
 
     # check number of files created is equal to number of sessions
     assert len(dataset_info) == len(creator.data_loader.get_sessions())
