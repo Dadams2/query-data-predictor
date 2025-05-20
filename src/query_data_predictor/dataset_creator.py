@@ -1,5 +1,4 @@
 import os
-import polars as pl
 import pandas as pd
 from typing import List, Dict, Optional, Any
 import sqlparse
@@ -21,7 +20,8 @@ class DatasetCreator:
         query_runner: QueryRunner = None,
         json_path: str = None, 
         output_dir: str = "datasets", 
-        dataset_prefix: str = "query_prediction"
+        dataset_prefix: str = "query_prediction",
+        results_dir: str = "query_results"  # New parameter for results directory
     ):
         """
         Initialize the dataset creator with either an existing DataLoader or path to JSON file.
@@ -31,6 +31,7 @@ class DatasetCreator:
             json_path: Optional path to JSON file with query data
             output_dir: Directory to save the dataset files
             dataset_prefix: Prefix for dataset filenames
+            results_dir: Directory to save query results files
         """
         if data_loader:
             self.data_loader = data_loader
@@ -41,9 +42,11 @@ class DatasetCreator:
         
         self.output_dir = output_dir
         self.dataset_prefix = dataset_prefix
+        self.results_dir = results_dir  # Store the results directory path
         
-        # Create output directory if it doesn't exist
+        # Create output directories if they don't exist
         os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(results_dir, exist_ok=True)  # Create results directory
         
         if query_runner is None:
             # Initialize QueryRunner with default parameters
@@ -86,66 +89,66 @@ class DatasetCreator:
         
         return features
     
-    def _extract_result_features(self, columns: List[str], results: pl.DataFrame) -> Dict[str, Any]:
+    def _extract_result_features(self, columns: List[str], results: pd.DataFrame) -> Dict[str, Any]:
         """
         Extract features from query results.
         
         Args:
             columns: List of column names
-            results: Polars DataFrame with results
+            results: Pandas DataFrame with results
             
         Returns:
             Dictionary of features
         """
         features = {
             'result_column_count': len(columns),
-            'result_row_count': results.height if not results.is_empty() else 0,
+            'result_row_count': len(results) if not results.empty else 0,
         }
         
         # If we have results, add more features
-        if not results.is_empty():
+        if not results.empty:
             # Get column types
             for i, col in enumerate(columns):
                 # Check column for type
-                col_type = results.schema[col]
+                col_type = results[col].dtype
                 features[f'col_{i}_type'] = str(col_type)
             
             # Basic statistics for numeric columns
             for i, col in enumerate(columns):
                 try:
-                    if pl.datatypes.is_numeric(results.schema[col]):
-                        features[f'col_{i}_min'] = results[col].min().item()
-                        features[f'col_{i}_max'] = results[col].max().item()
-                        features[f'col_{i}_mean'] = results[col].mean().item()
-                        features[f'col_{i}_std'] = results[col].std().item()
+                    if pd.api.types.is_numeric_dtype(results[col]):
+                        features[f'col_{i}_min'] = results[col].min()
+                        features[f'col_{i}_max'] = results[col].max()
+                        features[f'col_{i}_mean'] = results[col].mean()
+                        features[f'col_{i}_std'] = results[col].std()
                 except:
                     pass
         
         return features
     
-    def _get_result_signature(self, columns: List[str], results: pl.DataFrame) -> str:
+    def _get_result_signature(self, columns: List[str], results: pd.DataFrame) -> str:
         """
         Create a signature that represents the structure of the query results.
         
         Args:
             columns: List of column names
-            results: Polars DataFrame with results
+            results: Pandas DataFrame with results
             
         Returns:
             String signature of the results
         """
-        if results.is_empty():
+        if results.empty:
             return "empty_result"
         
         # Convert first few rows to strings to represent the data pattern
-        max_rows = min(5, results.height)
+        max_rows = min(5, len(results))
         sample_results = results.head(max_rows)
         
         # Create a signature based on column names and data types
         col_types = []
         for col in columns:
             # Get types of values in this column
-            col_dtype = str(results.schema[col])
+            col_dtype = str(results[col].dtype)
             col_types.append(f"{col}:{col_dtype}")
         
         return "|".join(col_types)
@@ -190,7 +193,19 @@ class DatasetCreator:
                     # Execute current query using QueryRunner
                     try:
                         curr_results = self.query_runner.execute_query(current_query)
-                        curr_columns = curr_results.columns
+                        # Convert polars DataFrame to pandas if needed
+                        if not isinstance(curr_results, pd.DataFrame):
+                            curr_results = curr_results.to_pandas()
+                        curr_columns = list(curr_results.columns)
+                        
+                        # Save the query results to a file
+                        results_filename = f"results_session_{current_session_id}_query_{i}.pkl"
+                        results_filepath = os.path.join(self.results_dir, results_filename)
+                        
+                        # Save results to file
+                        with open(results_filepath, 'wb') as f:
+                            pickle.dump(curr_results, f)
+                            
                     except Exception as e:
                         # pass over errors for now
                         print(f"Error executing current query: {e}")
@@ -205,6 +220,7 @@ class DatasetCreator:
                         'session_id': current_session_id,
                         'query_position': i,
                         'current_query': current_query,
+                        'results_filepath': results_filepath  # Add the path to the results file
                     }
                     all_features.update(query_features)
                     all_features.update(result_features)
@@ -212,8 +228,8 @@ class DatasetCreator:
                     dataset_rows.append(all_features)
 
                 if dataset_rows:
-                    # Create dataset DataFrame with Polars
-                    dataset = pl.DataFrame(dataset_rows)
+                    # Create dataset DataFrame with Pandas instead of Polars
+                    dataset = pd.DataFrame(dataset_rows)
 
                     # Save dataset for this session
                     output_path = os.path.join(self.output_dir, f"{self.dataset_prefix}_session_{current_session_id}.pkl")
