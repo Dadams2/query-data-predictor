@@ -1,6 +1,5 @@
 import os
 import pandas as pd
-import polars as pl
 from typing import List, Dict, Optional, Any
 import sqlparse
 import pickle
@@ -90,56 +89,55 @@ class DatasetCreator:
         
         return features
     
-    def _extract_result_features(self, columns: List[str], results: pl.DataFrame) -> Dict[str, Any]:
+    def _extract_result_features(self, columns: List[str], results: pd.DataFrame) -> Dict[str, Any]:
         """
         Extract features from query results.
         
         Args:
             columns: List of column names
-            results: Polars DataFrame with results
+            results: Pandas DataFrame with results
             
         Returns:
             Dictionary of features
         """
         features = {
             'result_column_count': len(columns),
-            'result_row_count': len(results) if not results.is_empty() else 0,
+            'result_row_count': len(results) if not results.empty else 0,
         }
         
         # If we have results, add more features
-        if not results.is_empty():
+        if not results.empty:
             # Get column types
             for i, col in enumerate(columns):
                 # Check column for type
-                col_type = results.schema[col]
+                col_type = results[col].dtype
                 features[f'col_{i}_type'] = str(col_type)
             
             # Basic statistics for numeric columns
             for i, col in enumerate(columns):
                 try:
-                    col_series = results[col]
-                    if pl.datatypes.is_numeric(col_series.dtype):
-                        features[f'col_{i}_min'] = col_series.min()
-                        features[f'col_{i}_max'] = col_series.max()
-                        features[f'col_{i}_mean'] = col_series.mean()
-                        features[f'col_{i}_std'] = col_series.std()
+                    if pd.api.types.is_numeric_dtype(results[col]):
+                        features[f'col_{i}_min'] = results[col].min()
+                        features[f'col_{i}_max'] = results[col].max()
+                        features[f'col_{i}_mean'] = results[col].mean()
+                        features[f'col_{i}_std'] = results[col].std()
                 except:
                     pass
         
         return features
     
-    def _get_result_signature(self, columns: List[str], results: pl.DataFrame) -> str:
+    def _get_result_signature(self, columns: List[str], results: pd.DataFrame) -> str:
         """
         Create a signature that represents the structure of the query results.
         
         Args:
             columns: List of column names
-            results: Polars DataFrame with results
+            results: Pandas DataFrame with results
             
         Returns:
             String signature of the results
         """
-        if results.is_empty():
+        if results.empty:
             return "empty_result"
         
         # Convert first few rows to strings to represent the data pattern
@@ -150,7 +148,7 @@ class DatasetCreator:
         col_types = []
         for col in columns:
             # Get types of values in this column
-            col_dtype = str(results.schema[col])
+            col_dtype = str(results[col].dtype)
             col_types.append(f"{col}:{col_dtype}")
         
         return "|".join(col_types)
@@ -195,14 +193,16 @@ class DatasetCreator:
                     # Execute current query using QueryRunner
                     try:
                         curr_results = self.query_runner.execute_query(current_query)
-                        # Get columns from polars DataFrame
-                        curr_columns = curr_results.columns
+                        # Convert polars DataFrame to pandas if needed
+                        if not isinstance(curr_results, pd.DataFrame):
+                            curr_results = curr_results.to_pandas()
+                        curr_columns = list(curr_results.columns)
                         
                         # Save the query results to a file
                         results_filename = f"results_session_{current_session_id}_query_{i}.pkl"
                         results_filepath = os.path.join(self.results_dir, results_filename)
                         
-                        # Save results to file - keep as polars DataFrame
+                        # Save results to file
                         with open(results_filepath, 'wb') as f:
                             pickle.dump(curr_results, f)
                             

@@ -1,5 +1,5 @@
 import psycopg2
-import polars as pl
+import pandas as pd
 
 
 class QueryRunner:
@@ -22,15 +22,15 @@ class QueryRunner:
             self.conn.close()
 
     def execute_query(self, query):
-        """Execute a single query and return the results as a polars DataFrame."""
+        """Execute a single query and return the results as a pandas DataFrame."""
         self.cursor.execute(query)
         result = self.cursor.fetchall()
         columns = [desc[0] for desc in self.cursor.description]
-        df = pl.DataFrame(result, schema=columns, strict=False)
+        df = pd.DataFrame(result, columns=columns)
         return df
 
     def execute_queries(self, queries):
-        """Execute multiple queries and return a list of polars DataFrames."""
+        """Execute multiple queries and return a list of pandas DataFrames."""
         results = []
         for query in queries:
             df = self.execute_query(query)
