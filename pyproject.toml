@@ -17,6 +17,7 @@ dependencies = [
     "pandas>=2.2.3",
     "polars>=1.29.0",
     "psycopg2>=2.9.10",
+    "pyarrow>=20.0.0",
     "scikit-learn>=1.6.1",
     "seaborn>=0.13.2",
     "sqlalchemy>=2.0.40",

@@ -1,6 +1,7 @@
 import os
 import pytest
 import pandas as pd
+import polars as pl
 from dotenv import load_dotenv
 from query_data_predictor.query_runner import QueryRunner
 from query_data_predictor.dataset_creator import DatasetCreator
@@ -68,10 +69,7 @@ class TestDatasetCreator:
         query_runner.connect()
         try:
             results = query_runner.execute_query(TEST_QUERY)
-            # Convert polars DataFrame to pandas if needed
-            if not isinstance(results, pd.DataFrame):
-                results = results.to_pandas()
-            columns = list(results.columns)
+            columns = results.columns
             
             features = dataset_creator._extract_result_features(columns, results)
             
@@ -91,10 +89,7 @@ class TestDatasetCreator:
         query_runner.connect()
         try:
             results = query_runner.execute_query(TEST_QUERY)
-            # Convert polars DataFrame to pandas if needed
-            if not isinstance(results, pd.DataFrame):
-                results = results.to_pandas()
-            columns = list(results.columns)
+            columns = results.columns
             
             signature = dataset_creator._get_result_signature(columns, results)
             
@@ -110,8 +105,8 @@ class TestDatasetCreator:
     
     def test_empty_result_signature(self, dataset_creator):
         """Test signature generation for empty results."""
-        # Create empty DataFrame with some columns
-        empty_df = pd.DataFrame({"col1": [], "col2": []})
+        # Create empty Polars DataFrame with some columns
+        empty_df = pl.DataFrame(schema={"col1": pl.Float64, "col2": pl.Float64})
         
         signature = dataset_creator._get_result_signature(empty_df.columns, empty_df)
         assert signature == "empty_result"
@@ -154,7 +149,7 @@ class TestDatasetCreator:
         for filepath in dataset['results_filepath']:
             assert os.path.exists(filepath)
             
-            # Verify that the result file contains a pandas DataFrame
+            # Verify that the result file contains a Polars DataFrame
             with open(filepath, 'rb') as f:
                 result_data = pickle.load(f)
-                assert isinstance(result_data, pd.DataFrame)
+                assert isinstance(result_data, pl.DataFrame)
