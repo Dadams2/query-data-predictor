@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import base64
 from typing import List, Dict, Optional, Any
 import sqlparse
 import pickle
@@ -109,19 +110,44 @@ class DatasetCreator:
         if not results.empty:
             # Get column types
             for i, col in enumerate(columns):
-                # Check column for type
-                col_type = results[col].dtype
-                features[f'col_{i}_type'] = str(col_type)
+                # Check if the column exists in the dataframe
+                if col in results.columns:
+                    # Handle duplicate columns - check if accessing the column returns a DataFrame
+                    col_data = results[col]
+                    if isinstance(col_data, pd.DataFrame):
+                        # For duplicate columns with the same name, we need to access by position
+                        # Use iloc to iterate through each duplicate column
+                        for j in range(col_data.shape[1]):
+                            # Get the series for this duplicate column using position
+                            series = col_data.iloc[:, j]
+                            col_type = series.dtype
+                            features[f'col_{i}_{j}_type'] = str(col_type)
+                    else:
+                        # Normal case - just a Series
+                        col_type = col_data.dtype
+                        features[f'col_{i}_type'] = str(col_type)
             
             # Basic statistics for numeric columns
             for i, col in enumerate(columns):
                 try:
-                    if pd.api.types.is_numeric_dtype(results[col]):
-                        features[f'col_{i}_min'] = results[col].min()
-                        features[f'col_{i}_max'] = results[col].max()
-                        features[f'col_{i}_mean'] = results[col].mean()
-                        features[f'col_{i}_std'] = results[col].std()
-                except:
+                    col_data = results[col]
+                    if isinstance(col_data, pd.DataFrame):
+                        # Handle duplicate columns for statistics using position-based access
+                        for j in range(col_data.shape[1]):
+                            series = col_data.iloc[:, j]
+                            if pd.api.types.is_numeric_dtype(series):
+                                features[f'col_{i}_{j}_min'] = series.min()
+                                features[f'col_{i}_{j}_max'] = series.max()
+                                features[f'col_{i}_{j}_mean'] = series.mean()
+                                features[f'col_{i}_{j}_std'] = series.std()
+                    elif pd.api.types.is_numeric_dtype(col_data):
+                        features[f'col_{i}_min'] = col_data.min()
+                        features[f'col_{i}_max'] = col_data.max()
+                        features[f'col_{i}_mean'] = col_data.mean()
+                        features[f'col_{i}_std'] = col_data.std()
+                except Exception as e:
+                    # Log the specific error but continue processing
+                    print(f"Error processing statistics for column {col}: {e}")
                     pass
         
         return features
@@ -202,18 +228,28 @@ class DatasetCreator:
                         results_filename = f"results_session_{current_session_id}_query_{i}.pkl"
                         results_filepath = os.path.join(self.results_dir, results_filename)
                         
-                        # Save results to file
+                        # Process the DataFrame to handle binary/image data before pickling
+                        pickle_safe_results = self._process_for_pickling(curr_results)
+                        
+                        # Save processed results to file
                         with open(results_filepath, 'wb') as f:
-                            pickle.dump(curr_results, f)
+                            pickle.dump(pickle_safe_results, f)
                             
                     except Exception as e:
-                        # pass over errors for now
+                        # Log the error details
                         print(f"Error executing current query: {e}")
                         continue
-
-                    # Extract features and target
-                    query_features = self._extract_query_features(current_query)
-                    result_features = self._extract_result_features(curr_columns, curr_results)
+                    
+                    try:
+                        # Extract features and target
+                        query_features = self._extract_query_features(current_query)
+                        result_features = self._extract_result_features(curr_columns, curr_results)
+                    except Exception as e:
+                        from IPython import embed
+                        embed()
+                        # Log the error details
+                        print(f"Error extracting features: {e}")
+                        continue
 
                     # Combine all features
                     all_features = {
@@ -265,3 +301,35 @@ class DatasetCreator:
         
         if hasattr(self, 'data_loader') and self.data_loader:
             self.data_loader.close()
+    
+    def _is_binary_data(self, series):
+        """Check if a pandas Series likely contains binary data"""
+        # Check a sample of the data to determine if it's binary
+        non_null = series.dropna()
+        if len(non_null) == 0:
+            return False
+            
+        # Check the first non-null value
+        sample = non_null.iloc[0]
+        
+        # Check if it's bytes, memoryview, or a list of bytes
+        if isinstance(sample, (bytes, memoryview)):
+            return True
+        elif isinstance(sample, list) and len(sample) > 0 and isinstance(sample[0], bytes):
+            return True
+        return False
+    
+    def _process_for_pickling(self, df):
+        """Process a DataFrame to make it picklable by converting binary data to base64"""
+        result_df = df.copy()
+        
+        for col in df.columns:
+            if self._is_binary_data(df[col]):
+                # Convert binary data to base64 encoded strings
+                result_df[col] = df[col].apply(
+                    lambda x: base64.b64encode(x).decode('utf-8') if isinstance(x, (bytes, memoryview))
+                    else [base64.b64encode(b).decode('utf-8') for b in x] if isinstance(x, list) 
+                    else x
+                )
+                
+        return result_df
