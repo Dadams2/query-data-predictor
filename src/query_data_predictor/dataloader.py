@@ -40,8 +40,9 @@ class DataLoader():
         if hasattr(data, 'filter'):
             # For polars DataFrame
             # Todo: make query position a global constant somewhere
-            filtered_data = data.filter(data['query_position'] == query_id)
-            if filtered_data.height == 0:
+            print(data)
+            filtered_data = data[data['query_position'] == query_id]
+            if filtered_data.size == 0:
                 raise ValueError(f"Query ID {query_id} not found in session {session_id}")
             return filtered_data
         elif isinstance(data, dict):
