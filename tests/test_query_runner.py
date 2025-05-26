@@ -1,6 +1,6 @@
 import os
 import pytest
-import polars as pl
+import pandas as pd
 from dotenv import load_dotenv
 from query_data_predictor.query_runner import QueryRunner
 
@@ -41,10 +41,10 @@ def test_execute_query(query_runner):
         # Simple test query that should work on any PostgreSQL database
         df = query_runner.execute_query("SELECT 1 as test_col")
 
-        assert isinstance(df, pl.DataFrame)
+        assert isinstance(df, pd.DataFrame)
         assert df.shape == (1, 1)
-        assert df.columns == ["test_col"]
-        assert df[0, 0] == 1
+        assert df.columns.tolist() == ["test_col"]
+        assert df.iloc[0, 0] == 1
     finally:
         query_runner.disconnect()
 
@@ -56,9 +56,9 @@ def test_sdss_quewry(query_runner):
         # Simple test query that should work on any PostgreSQL database
         df = query_runner.execute_query(TEST_QUERY)
 
-        assert isinstance(df, pl.DataFrame)
+        assert isinstance(df, pd.DataFrame)
         assert df.shape == (9, 2)
-        assert df.columns == ["bestobjid", "z"]
+        assert df.columns.tolist() == ["bestobjid", "z"]
     finally:
         query_runner.disconnect()
 
@@ -75,9 +75,9 @@ def test_execute_queries(query_runner):
         results = query_runner.execute_queries(queries)
 
         assert len(results) == 2
-        assert all(isinstance(df, pl.DataFrame) for df in results)
-        assert results[0][0, 0] == 1
-        assert results[1][0, 0] == 2
+        assert all(isinstance(df, pd.DataFrame) for df in results)
+        assert results[0].iloc[0, 0] == 1
+        assert results[1].iloc[0, 0] == 2
     finally:
         query_runner.disconnect()
 
@@ -93,7 +93,7 @@ def test_context_manager():
 
         # Execute a simple query
         df = runner.execute_query("SELECT 1 as test_col")
-        assert isinstance(df, pl.DataFrame)
+        assert isinstance(df, pd.DataFrame)
         assert df.shape == (1, 1)
 
     # Connection should be closed after exiting context

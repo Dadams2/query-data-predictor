@@ -1,6 +1,5 @@
 import os
 import pytest
-import polars as pl
 import pandas as pd
 from dotenv import load_dotenv
 from query_data_predictor.query_runner import QueryRunner
@@ -69,7 +68,7 @@ class TestDatasetCreator:
             # Basic assertions
             assert isinstance(features, dict)
             assert features['result_column_count'] == len(columns)
-            assert features['result_row_count'] == results.height
+            assert features['result_row_count'] == len(results)
             
             # Check column type features
             for i in range(len(columns)):
@@ -99,7 +98,7 @@ class TestDatasetCreator:
     def test_empty_result_signature(self, dataset_creator):
         """Test signature generation for empty results."""
         # Create empty DataFrame with some columns
-        empty_df = pl.DataFrame({"col1": [], "col2": []})
+        empty_df = pd.DataFrame({"col1": [], "col2": []})
         
         signature = dataset_creator._get_result_signature(empty_df.columns, empty_df)
         assert signature == "empty_result"
