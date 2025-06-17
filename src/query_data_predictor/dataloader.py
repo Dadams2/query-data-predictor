@@ -53,6 +53,34 @@ class DataLoader():
         else:
             raise TypeError(f"Unsupported data type: {type(data)}")
 
+    def get_sessions(self):
+        """
+        Get all available sessions with their metadata.
+        
+        Returns:
+            Dictionary mapping session IDs to session information
+        """
+        sessions = {}
+        for session_id in self.metadata["session_id"].unique():
+            # Get session data to populate session information
+            try:
+                session_data = self.get_results_for_session(session_id)
+                
+                # Create a session entry with basic information
+                session_info = {
+                    'id': session_id,
+                    'queries': session_data if isinstance(session_data, dict) else 
+                              {row['query_position']: row for _, row in session_data.iterrows()} 
+                              if hasattr(session_data, 'iterrows') else {}
+                }
+                
+                sessions[session_id] = session_info
+            except (FileNotFoundError, ValueError) as e:
+                # Skip sessions with missing files
+                print(f"Warning: Could not load session {session_id}: {e}")
+        
+        return sessions
+        
     def get_results_for_session(self, session_id: str):
         """
         Return all statement results for a given session ID.
