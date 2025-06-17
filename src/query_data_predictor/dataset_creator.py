@@ -101,6 +101,12 @@ class DatasetCreator:
         Returns:
             Dictionary of features
         """
+        # Validate inputs
+        if results is None or not isinstance(results, pd.DataFrame):
+            raise ValueError("Invalid results: Expected a Pandas DataFrame.")
+        if columns is None or not isinstance(columns, list):
+            raise ValueError("Invalid columns: Expected a list of column names.")
+        
         features = {
             'result_column_count': len(columns),
             'result_row_count': len(results) if not results.empty else 0,
@@ -110,41 +116,35 @@ class DatasetCreator:
         if not results.empty:
             # Get column types
             for i, col in enumerate(columns):
-                # Check if the column exists in the dataframe
                 if col in results.columns:
-                    # Handle duplicate columns - check if accessing the column returns a DataFrame
                     col_data = results[col]
                     if isinstance(col_data, pd.DataFrame):
-                        # For duplicate columns with the same name, we need to access by position
-                        # Use iloc to iterate through each duplicate column
                         for j in range(col_data.shape[1]):
-                            # Get the series for this duplicate column using position
                             series = col_data.iloc[:, j]
                             col_type = series.dtype
                             features[f'col_{i}_{j}_type'] = str(col_type)
                     else:
-                        # Normal case - just a Series
                         col_type = col_data.dtype
                         features[f'col_{i}_type'] = str(col_type)
             
             # Basic statistics for numeric columns
             for i, col in enumerate(columns):
                 try:
-                    col_data = results[col]
-                    if isinstance(col_data, pd.DataFrame):
-                        # Handle duplicate columns for statistics using position-based access
-                        for j in range(col_data.shape[1]):
-                            series = col_data.iloc[:, j]
-                            if pd.api.types.is_numeric_dtype(series):
-                                features[f'col_{i}_{j}_min'] = series.min()
-                                features[f'col_{i}_{j}_max'] = series.max()
-                                features[f'col_{i}_{j}_mean'] = series.mean()
-                                features[f'col_{i}_{j}_std'] = series.std()
-                    elif pd.api.types.is_numeric_dtype(col_data):
-                        features[f'col_{i}_min'] = col_data.min()
-                        features[f'col_{i}_max'] = col_data.max()
-                        features[f'col_{i}_mean'] = col_data.mean()
-                        features[f'col_{i}_std'] = col_data.std()
+                    if col in results.columns:
+                        col_data = results[col]
+                        if isinstance(col_data, pd.DataFrame):
+                            for j in range(col_data.shape[1]):
+                                series = col_data.iloc[:, j]
+                                if pd.api.types.is_numeric_dtype(series):
+                                    features[f'col_{i}_{j}_min'] = series.min()
+                                    features[f'col_{i}_{j}_max'] = series.max()
+                                    features[f'col_{i}_{j}_mean'] = series.mean()
+                                    features[f'col_{i}_{j}_std'] = series.std()
+                        elif pd.api.types.is_numeric_dtype(col_data):
+                            features[f'col_{i}_min'] = col_data.min()
+                            features[f'col_{i}_max'] = col_data.max()
+                            features[f'col_{i}_mean'] = col_data.mean()
+                            features[f'col_{i}_std'] = col_data.std()
                 except Exception as e:
                     # Log the specific error but continue processing
                     print(f"Error processing statistics for column {col}: {e}")

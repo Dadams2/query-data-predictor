@@ -40,7 +40,7 @@ class DataLoader():
         if hasattr(data, 'filter'):
             # For polars DataFrame
             # Todo: make query position a global constant somewhere
-            print(data)
+            # print(data)
             filtered_data = data[data['query_position'] == query_id]
             if filtered_data.size == 0:
                 raise ValueError(f"Query ID {query_id} not found in session {session_id}")
@@ -60,26 +60,27 @@ class DataLoader():
         Returns:
             Dictionary mapping session IDs to session information
         """
-        sessions = {}
-        for session_id in self.metadata["session_id"].unique():
-            # Get session data to populate session information
-            try:
-                session_data = self.get_results_for_session(session_id)
+        # sessions = {}
+        # for session_id in self.metadata["session_id"].unique():
+        #     # Get session data to populate session information
+        #     try:
+        #         session_data = self.get_results_for_session(session_id)
                 
-                # Create a session entry with basic information
-                session_info = {
-                    'id': session_id,
-                    'queries': session_data if isinstance(session_data, dict) else 
-                              {row['query_position']: row for _, row in session_data.iterrows()} 
-                              if hasattr(session_data, 'iterrows') else {}
-                }
+        #         # Create a session entry with basic information
+        #         session_info = {
+        #             'id': session_id,
+        #             'queries': session_data if isinstance(session_data, dict) else 
+        #                       {row['query_position']: row for _, row in session_data.iterrows()} 
+        #                       if hasattr(session_data, 'iterrows') else {}
+        #         }
                 
-                sessions[session_id] = session_info
-            except (FileNotFoundError, ValueError) as e:
-                # Skip sessions with missing files
-                print(f"Warning: Could not load session {session_id}: {e}")
+        #         sessions[session_id] = session_info
+        #     except (FileNotFoundError, ValueError) as e:
+        #         # Skip sessions with missing files
+        #         print(f"Warning: Could not load session {session_id}: {e}")
         
-        return sessions
+        # return sessions
+        return self.metadata["session_id"].unique().tolist()
         
     def get_results_for_session(self, session_id: str):
         """

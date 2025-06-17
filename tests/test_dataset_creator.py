@@ -61,7 +61,9 @@ class TestDatasetCreator:
         query_runner.connect()
         try:
             results = query_runner.execute_query(TEST_QUERY)
-            columns = results.columns
+            # the query runner returns a DataFrame-like object but we can treat it as a DataFrame for feature extraction
+            # as usually we will be working with loaded piccle files
+            columns = results.columns.to_list()
             
             features = dataset_creator._extract_result_features(columns, results)
             
