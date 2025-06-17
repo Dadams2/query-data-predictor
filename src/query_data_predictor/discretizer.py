@@ -1,4 +1,4 @@
-import polars as pl
+import pandas as pd
 import numpy as np
 import pickle
 from sklearn.cluster import KMeans
@@ -36,44 +36,32 @@ class Discretizer:
         Discretizes all float columns in a DataFrame and updates binning parameters iteratively.
         
         Parameters:
-        df (pl.DataFrame): The DataFrame containing the data.
+        df (pd.DataFrame): The DataFrame containing the data.
         
         Returns:
-        pl.DataFrame: DataFrame with discretized values.
+        pd.DataFrame: DataFrame with discretized values.
         """
-        # Convert to polars DataFrame if it's a pandas DataFrame
-        if not isinstance(df, pl.DataFrame):
-            df = pl.from_pandas(df)
-        
         # Get float columns
-        float_columns = [col for col in df.columns if df[col].dtype == pl.Float64]
+        float_columns = df.select_dtypes(include=[np.float64]).columns
         
         for column in float_columns:
             if column in self.discretization_params:
                 bins_edges = self.discretization_params[column]
-                # Create a new column using polars expressions
-                df = df.with_columns(
-                    pl.Series(
-                        name=f"{column}_bin",
-                        values=np.digitize(df[column].to_numpy(), bins_edges, right=False)
-                    )
-                )
+                df[f"{column}_bin"] = np.digitize(df[column], bins_edges, right=False)
             else:
                 if self.method == 'equal_width':
                     min_val = df[column].min()
                     max_val = df[column].max()
                     bins_edges = np.linspace(min_val, max_val, self.bins+1)
                     
-                    # Digitize using numpy and create a new column
-                    bin_values = np.digitize(df[column].to_numpy(), bins_edges, right=False)
+                    # Digitize using numpy
+                    bin_values = np.digitize(df[column], bins_edges, right=False)
                     
                     # Fix values outside the range
-                    bin_values = np.where(df[column].to_numpy() < bins_edges[0], 0, bin_values)
-                    bin_values = np.where(df[column].to_numpy() > bins_edges[-1], len(bins_edges) - 1, bin_values)
+                    bin_values = np.where(df[column] < bins_edges[0], 0, bin_values)
+                    bin_values = np.where(df[column] > bins_edges[-1], len(bins_edges) - 1, bin_values)
                     
-                    df = df.with_columns(
-                        pl.Series(name=f"{column}_bin", values=bin_values)
-                    )
+                    df[f"{column}_bin"] = bin_values
                 elif self.method == 'equal_freq':
                     # Calculate quantiles for bin edges
                     quantiles = [i/self.bins for i in range(self.bins+1)]
@@ -83,27 +71,22 @@ class Discretizer:
                     bins_edges = sorted(set(bins_edges))
                     
                     # Digitize using numpy
-                    bin_values = np.digitize(df[column].to_numpy(), bins_edges, right=False)
-                    df = df.with_columns(
-                        pl.Series(name=f"{column}_bin", values=bin_values)
-                    )
+                    df[f"{column}_bin"] = np.digitize(df[column], bins_edges, right=False)
                 elif self.method == 'kmeans':
                     kmeans = KMeans(n_clusters=self.bins, random_state=42, n_init=10)
                     # Get data as numpy array for kmeans
-                    data = df[column].to_numpy().reshape(-1, 1)
+                    data = df[column].values.reshape(-1, 1)
                     bin_values = kmeans.fit_predict(data)
                     bins_edges = kmeans.cluster_centers_.flatten()
                     
-                    df = df.with_columns(
-                        pl.Series(name=f"{column}_bin", values=bin_values)
-                    )
+                    df[f"{column}_bin"] = bin_values
                 else:
                     raise ValueError("Invalid method. Choose from 'equal_width', 'equal_freq', or 'kmeans'.")
                 
                 self.discretization_params[column] = bins_edges
             
             # Drop the original column
-            df = df.drop(column)
+            df.drop(column, axis=1, inplace=True)
         
         self.save_params()
         return df
@@ -113,24 +96,11 @@ class Discretizer:
         Prepend the column name to all the values in the DataFrame.
         
         Parameters:
-        df (pl.DataFrame): The DataFrame containing the data.
+        df (pd.DataFrame): The DataFrame containing the data.
         
         Returns:
-        pl.DataFrame: DataFrame with column names prepended to the values.
+        pd.DataFrame: DataFrame with column names prepended to the values.
         """
-        # Convert to polars DataFrame if it's a pandas DataFrame
-        if not isinstance(df, pl.DataFrame):
-            df = pl.from_pandas(df)
-            
-        # Create a function that creates a lambda with the column name properly bound
-        def create_mapper(col_name):
-            return lambda x: f"{col_name}_{x}"
-        
-        # Create expressions for each column to prepend the column name
-        expressions = [
-            pl.col(column).map_elements(create_mapper(column)).alias(column)
-            for column in df.columns
-        ]
-        
-        # Apply all expressions at once
-        return df.select(expressions)
+        for column in df.columns:
+            df[column] = df[column].apply(lambda x: f"{column}_{x}")
+        return df
