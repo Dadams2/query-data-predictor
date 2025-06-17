@@ -1,0 +1,57 @@
+# Configuration for query prediction experiment
+# Adjust parameters as needed for your specific use case
+
+experiment:
+  name: 'default_experiment'
+  prediction_gap: 1
+  random_seed: 42
+  sessions_limit: null  # null for all sessions, integer for limited number
+
+discretization:
+  enabled: true
+  method: 'equal_width'  # Options: equal_width, equal_freq, kmeans
+  bins: 5
+  save_params: true
+  params_path: 'discretization_params.pkl'
+
+association_rules:
+  enabled: true
+  min_support: 0.1
+  metric: 'confidence'  # Options: support, confidence, lift, leverage, conviction
+  min_threshold: 0.7
+  max_len: null  # Maximum length of rules, null for no limit
+
+summaries:
+  enabled: true
+  desired_size: 5  # Number of summaries to generate
+  weights: null  # Custom weights for attributes, null for equal weights
+
+interestingness:
+  enabled: true
+  measures:
+    - 'variance'
+    - 'simpson'
+    - 'shannon'
+    - 'total'
+
+recommendation:
+  enabled: true
+  method: 'hybrid'  # Options: association_rules, summaries, hybrid
+  top_k: 10  # Number of tuples to recommend
+  score_threshold: 0.5  # Minimum score for recommendations
+
+evaluation:
+  metrics:
+    - 'accuracy'
+    - 'overlap'
+    - 'jaccard'
+    - 'precision'
+    - 'recall'
+    - 'f1'
+  jaccard_threshold: 0.5  # Threshold for considering tuples similar in Jaccard similarity
+  column_weights: null  # Custom weights for columns in similarity calculation
+
+output:
+  save_results: true
+  results_dir: 'experiment_results'
+  save_format: 'json'  # Options: pkl, csv, json
