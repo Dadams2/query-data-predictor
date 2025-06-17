@@ -51,3 +51,26 @@ def complex_transactions():
     te_ary = te.fit(COMPLEX_TRANSACTIONS).transform(COMPLEX_TRANSACTIONS)
     df = pd.DataFrame(te_ary, columns=te.columns_)
     return df
+
+
+@pytest.fixture
+def sample_config():
+    """Fixture for a sample configuration."""
+    return {
+        "discretization": {
+            "enabled": True,
+            "method": "equal_width",
+            "bins": 3
+        },
+        "association_rules": {
+            "enabled": True,
+            "min_support": 0.1,
+            "metric": "confidence",
+            "min_threshold": 0.5
+        },
+        "recommendation": {
+            "enabled": True,
+            "method": "association_rules",
+            "top_k": 5
+        }
+    }
