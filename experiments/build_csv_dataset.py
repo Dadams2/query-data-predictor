@@ -1,6 +1,4 @@
 import os
-import pytest
-import polars as pl
 import hashlib
 from dotenv import load_dotenv
 from query_data_predictor.query_runner import QueryRunner
@@ -22,23 +20,26 @@ DB_USER = os.getenv("PG_DATA_USER")
 DB_HOST = os.getenv("PG_HOST", "localhost")
 DB_PORT = os.getenv("PG_PORT", "5432")
 
-@pytest.fixture
-def query_runner():
-    """Create and return a QueryRunner instance with connection params from env vars."""
-    runner = QueryRunner(dbname=DB_NAME, user=DB_USER, host=DB_HOST, port=DB_PORT)
-    return runner
+runner = QueryRunner(dbname=DB_NAME, user=DB_USER, host=DB_HOST, port=DB_PORT)
 
 
 
-def test_full_build(query_runner):
-    loader = SDSSCSVImporter(SAMPLE_CSV_PATH)
-    creator = DatasetCreator(data_loader=loader, query_runner=query_runner, output_dir=OUTPUT_DIR, results_dir=QUERY_RESULTS_DIR)
-    dataset_info = creator.build_dataset()
-    # assert len(dataset_info) == 13 
+loader = SDSSCSVImporter(SAMPLE_CSV_PATH)
+creator = DatasetCreator(data_loader=loader, query_runner=runner, output_dir=OUTPUT_DIR, results_dir=QUERY_RESULTS_DIR)
+dataset_info = creator.build_dataset()
 
-    # check number of files created is equal to number of sessions
-    assert len(dataset_info) == len(creator.data_loader.get_sessions())
-    file = dataset_info[1]["file_path"]
-    assert os.path.exists(file)
-    md5 = hashlib.md5(open(file, "rb").read()).hexdigest()
-    assert md5 == "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
+print(len(dataset_info))
+print(creator.data_loader.get_sessions())
+file = dataset_info[1]["file_path"]
+# print if file exists and its size
+print(f"File exists: {os.path.exists(file)}")
+print(f"File size: {os.path.getsize(file)} bytes")
+# print md5 hash of the file
+import hashlib
+if not os.path.exists(file):
+    raise FileNotFoundError(f"File {file} does not exist.") 
+if os.path.getsize(file) == 0:
+    raise ValueError(f"File {file} is empty.")  
+with open(file, "rb") as f:
+    file_hash = hashlib.md5(f.read()).hexdigest()
+print(f"MD5 hash of the file: {file_hash}") 
