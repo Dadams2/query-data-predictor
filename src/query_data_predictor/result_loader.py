@@ -27,7 +27,6 @@ class ResultLoader:
             dataloader: A DataLoader instance that has access to session metadata
         """
         self.dataloader = dataloader
-        self.result_cache = {}  # Cache for results to avoid repeated disk I/O
         
     def get_result_data(self, session_id: str, query_id: str) -> pd.DataFrame:
         """
@@ -41,32 +40,7 @@ class ResultLoader:
             The query results as a pandas DataFrame
         """
         # Get session data which includes results_filepath
-        session_data = self.dataloader.get_results_for_query(session_id, query_id)
-        
-        # Check if results_filepath is available
-        if 'results_filepath' not in session_data:
-            raise ValueError(f"No results_filepath found for query {query_id} in session {session_id}")
-        
-        # Get the path to the result file
-        # TODO fix the.values by going to back to how the data is seralised 
-        results_filepath = session_data['results_filepath'].values[0]
-        
-        # Check if already in cache
-        cache_key = f"{session_id}_{query_id}"
-        if cache_key in self.result_cache:
-            return self.result_cache[cache_key]
-        
-        # Load the result data from the file
-        try:
-            with open(results_filepath, 'rb') as f:
-                result_data = pickle.load(f)
-            
-            # Cache the result for future use
-            self.result_cache[cache_key] = result_data
-            
-            return result_data
-        except Exception as e:
-            raise IOError(f"Failed to load result data from {results_filepath}: {e}")
+        return self.dataloader.get_results_for_query(session_id, query_id)
     
     def get_consecutive_query_results(self, session_id: str, query_id: str, gap: int = 1) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
         """
@@ -93,32 +67,6 @@ class ResultLoader:
             # No future query or future query has no results
             return current_results, None
     
-    def get_all_session_results(self, session_id: str) -> Dict[str, pd.DataFrame]:
-        """
-        Get all result data for a session.
-        
-        Args:
-            session_id: The ID of the session
-            
-        Returns:
-            A dictionary mapping query_id to result DataFrame
-        """
-        # Get session metadata
-        session_metadata = self.dataloader.get_results_for_session(session_id)
-        
-        results = {}
-        
-        # Iterate over all queries in the session
-        for i, query_data in session_metadata.iterrows():
-            query_id = str(query_data['query_position'])
-            
-            try:
-                # Get the result data for this query
-                results[query_id] = self.get_result_data(session_id, query_id)
-            except Exception as e:
-                print(f"Warning: Could not load results for query {query_id} in session {session_id}: {e}")
-                
-        return results
         
     def get_query_pairs_with_gap(self, session_id: str, gap: int = 1) -> List[Tuple[str, str]]:
         """
@@ -132,7 +80,7 @@ class ResultLoader:
             List of tuples (start_query_id, target_query_id)
         """
         # Get all results for the session
-        all_results = self.get_all_session_results(session_id)
+        all_results = self.dataloader.get_results_for_session(session_id)
         
         if not all_results:
             return []
@@ -222,6 +170,6 @@ class ResultLoader:
             The query results as a DataFrame, or None if not found
         """
         try:
-            return self.get_result_data(session_id, str(query_position))
+            return self.get_result_data(session_id, query_position)
         except Exception:
             return None
