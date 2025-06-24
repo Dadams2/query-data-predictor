@@ -17,16 +17,23 @@ class QueryResultSequence:
 
     def get_ordered_query_ids(self, session_id: str) -> list:
         """
-        Returns a list of query IDs (as strings) in order for the session.
+        Returns a list of query IDs in order for the session.
+        Assumes session data is a DataFrame with a 'query_position' column.
         """
         if session_id in self.id_cache:
             return self.id_cache[session_id]
-        all_results = self.dataloader.get_results_for_session(session_id)
-        if not all_results:
+        
+        session_data = self.dataloader.get_results_for_session(session_id)
+        
+        # Handle empty DataFrame
+        if session_data.empty:
+            self.id_cache[session_id] = []
             return []
-        # Sort query IDs as integers, then convert back to strings
-        self.id_cache[session_id] = all_results.keys()
-        return list(self.id_cache[session_id])
+        
+        # Extract query positions and sort them
+        query_ids = sorted(session_data['query_position'].tolist())
+        self.id_cache[session_id] = query_ids
+        return query_ids
 
     def get_query_results(self, session_id: str, query_id: str) -> pd.DataFrame:
         """
