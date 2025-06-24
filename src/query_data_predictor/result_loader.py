@@ -28,7 +28,7 @@ class ResultLoader:
         """
         self.dataloader = dataloader
         
-    def get_result_data(self, session_id: str, query_id: str) -> pd.DataFrame:
+    def get_result_data(self, session_id: int, query_id: int) -> pd.DataFrame:
         """
         Get the actual result data for a specific query in a session.
         
@@ -42,7 +42,7 @@ class ResultLoader:
         # Get session data which includes results_filepath
         return self.dataloader.get_results_for_query(session_id, query_id)
     
-    def get_consecutive_query_results(self, session_id: str, query_id: str, gap: int = 1) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
+    def get_consecutive_query_results(self, session_id: int, query_id: int, gap: int = 1) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
         """
         Get the results for the current query and a future query in the session with a specified gap.
         
@@ -61,14 +61,14 @@ class ResultLoader:
         # Try to get the future query's results
         try:
             future_query_id = int(query_id) + gap  # Apply the gap to get the future query ID
-            future_results = self.get_result_data(session_id, str(future_query_id))
+            future_results = self.get_result_data(session_id, future_query_id)
             return current_results, future_results
         except (ValueError, KeyError):
             # No future query or future query has no results
             return current_results, None
     
         
-    def get_query_pairs_with_gap(self, session_id: str, gap: int = 1) -> List[Tuple[str, str]]:
+    def get_query_pairs_with_gap(self, session_id: int, gap: int = 1) -> List[Tuple[str, str]]:
         """
         Get all valid pairs of query IDs with a specified gap between them for a session.
         
@@ -94,10 +94,10 @@ class ResultLoader:
         for i in range(len(query_ids) - gap):
             start_id = query_ids[i]
             target_id = query_ids[i + gap]
-            
-            start_query_id = str(start_id)
-            target_query_id = str(target_id)
-            
+
+            start_query_id = start_id
+            target_query_id = target_id
+
             # Get the result data for both queries
             start_results = all_results[start_query_id]
             target_results = all_results[target_query_id]
@@ -107,8 +107,8 @@ class ResultLoader:
                 pairs.append((start_query_id, target_query_id))
                 
         return pairs
-    
-    def get_results_with_gap(self, session_id: str, gap: int = 1) -> List[Tuple[str, str, pd.DataFrame, pd.DataFrame]]:
+
+    def get_results_with_gap(self, session_id: int, gap: int = 1) -> List[Tuple[int, int, pd.DataFrame, pd.DataFrame]]:
         """
         Get all valid pairs of queries with their results for a specified gap.
         
@@ -136,8 +136,8 @@ class ResultLoader:
             result_pairs.append((start_id, target_id, start_results, target_results))
         
         return result_pairs
-        
-    def get_all_session_gaps(self, session_id: str, max_gap: int = 3) -> Dict[int, List[Tuple[str, str, pd.DataFrame, pd.DataFrame]]]:
+
+    def get_all_session_gaps(self, session_id: int, max_gap: int = 3) -> Dict[int, List[Tuple[int, int, pd.DataFrame, pd.DataFrame]]]:
         """
         Get all valid query pairs with different gaps for a session, up to a maximum gap.
         
@@ -157,8 +157,8 @@ class ResultLoader:
                 results[gap] = pairs
                 
         return results
-    
-    def get_result(self, session_id: str, query_position: int) -> Optional[pd.DataFrame]:
+
+    def get_result(self, session_id: int, query_position: int) -> Optional[pd.DataFrame]:
         """
         Get the result for a specific query position in a session.
         

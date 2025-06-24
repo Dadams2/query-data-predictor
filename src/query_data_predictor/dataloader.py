@@ -21,7 +21,7 @@ class DataLoader():
         self.memory_cache = {}
     
 
-    def get_results_for_query(self, session_id, query_id: str) -> np.ndarray:
+    def get_results_for_query(self, session_id: int, query_id: int) -> np.ndarray:
         """
         Get the results for a specific query in a session.
         
@@ -82,7 +82,7 @@ class DataLoader():
         # return sessions
         return self.metadata["session_id"].unique().tolist()
         
-    def get_results_for_session(self, session_id: str):
+    def get_results_for_session(self, session_id: int):
         """
         Return all statement results for a given session ID.
         
