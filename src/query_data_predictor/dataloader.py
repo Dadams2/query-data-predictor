@@ -95,7 +95,11 @@ class DataLoader():
         # Find the session in the metadata
         session_rows = self.metadata[self.metadata["session_id"] == session_id]
         if len(session_rows) == 0:
-            raise ValueError(f"Session ID {session_id} not found in metadata")
+            # check if session id is a string and add to error message 
+            if isinstance(session_id, str):
+                raise ValueError(f"Session ID '{session_id}' is a string not found in metadata")
+            else:
+                raise ValueError(f"Session ID {session_id} not found in metadata")
             
         # Get the file path from the metadata
         if "filepath" in self.metadata.columns:
