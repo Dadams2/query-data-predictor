@@ -37,8 +37,21 @@ interestingness:
 recommendation:
   enabled: true
   method: 'hybrid'  # Options: association_rules, summaries, hybrid
-  top_k: 10  # Number of tuples to recommend
+  recommender_type: 'interestingness'  # Options: dummy, random, clustering, interestingness
+  mode: 'top_k'  # Options: top_k, top_quartile, percentage
+  top_k: 10  # Number of tuples to recommend (for top_k mode)
+  percentage: 0.1  # Percentage of tuples to recommend (for percentage mode)
   score_threshold: 0.5  # Minimum score for recommendations
+
+# Configuration for different recommender types
+clustering:
+  n_clusters: null  # Number of clusters, null for auto-determination
+  random_state: 42
+  max_iter: 300
+  n_init: 10
+
+random:
+  random_seed: 42
 
 evaluation:
   metrics:
