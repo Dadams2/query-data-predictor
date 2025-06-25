@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 from typing import List, Dict, Set, Tuple, Any, Union, Optional
 from mlxtend.frequent_patterns import fpgrowth
+from mlxtend.preprocessing import TransactionEncoder
 
 from query_data_predictor.discretizer import Discretizer
 from query_data_predictor.association_interestingness import AssociationEvaluator
@@ -52,29 +53,59 @@ class TupleRecommender:
             return self.discretizer.discretize_dataframe(df)
         return df
     
-    def mine_association_rules(self, df: pd.DataFrame) -> pd.DataFrame:
+    def compute_frequent_itemsets(self, df: pd.DataFrame, min_support: Optional[float] = None) -> pd.DataFrame:
+        """
+        Compute frequent itemsets from the DataFrame using FP-Growth.
+        
+        Args:
+            df: Input DataFrame (should be preprocessed/discretized)
+            min_support: Minimum support threshold (uses config if not provided)
+            
+        Returns:
+            DataFrame with frequent itemsets
+        """
+        # Get configuration for association rules if min_support not provided
+        if min_support is None:
+            assoc_config = self.config.get('association_rules', {})
+            min_support = assoc_config.get('min_support', 0.1)
+        
+        # Convert DataFrame to encoded format for fpgrowth
+        encoded_df, attributes = self._prepare_data_for_fpgrowth(df)
+        
+        if encoded_df.empty:
+            return pd.DataFrame()
+        
+        try:
+            # Mine frequent itemsets using FP-Growth
+            frequent_itemsets = fpgrowth(
+                encoded_df, 
+                min_support=min_support, 
+                use_colnames=True,
+                verbose=0  # Suppress verbose output for performance
+            )
+            return frequent_itemsets
+        except Exception as e:
+            # Return empty DataFrame if FP-Growth fails
+            print(f"Warning: FP-Growth failed with error: {e}")
+            return pd.DataFrame()
+
+    def mine_association_rules(self, df: pd.DataFrame, frequent_itemsets: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """
         Mine association rules from the DataFrame.
         
         Args:
             df: Input DataFrame (should be preprocessed/discretized)
+            frequent_itemsets: Pre-computed frequent itemsets (optional)
             
         Returns:
             DataFrame with association rules
         """
         # Get configuration for association rules
         assoc_config = self.config.get('association_rules', {})
-        min_support = assoc_config.get('min_support', 0.1)
         
-        # Convert DataFrame to one-hot encoded format for fpgrowth
-        one_hot_df = self._prepare_data_for_fpgrowth(df)
-        
-        # Mine frequent itemsets
-        frequent_itemsets = fpgrowth(
-            one_hot_df, 
-            min_support=min_support, 
-            use_colnames=True
-        )
+        # Use provided frequent itemsets or compute them
+        if frequent_itemsets is None:
+            frequent_itemsets = self.compute_frequent_itemsets(df)
         
         if frequent_itemsets.empty:
             return pd.DataFrame()
@@ -90,12 +121,13 @@ class TupleRecommender:
         
         return rules_df
     
-    def generate_summaries(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
+    def generate_summaries(self, df: pd.DataFrame, frequent_itemsets: Optional[pd.DataFrame] = None) -> List[Dict[str, Any]]:
         """
         Generate summaries from the DataFrame.
         
         Args:
             df: Input DataFrame (should be preprocessed/discretized)
+            frequent_itemsets: Pre-computed frequent itemsets (optional)
             
         Returns:
             List of summary dictionaries
@@ -104,15 +136,9 @@ class TupleRecommender:
         summary_config = self.config.get('summaries', {})
         desired_size = summary_config.get('desired_size', 5)
         
-        # Convert DataFrame to one-hot encoded format for fpgrowth
-        one_hot_df = self._prepare_data_for_fpgrowth(df)
-        
-        # Mine frequent itemsets with low support for summaries
-        frequent_itemsets = fpgrowth(
-            one_hot_df, 
-            min_support=0.05,  # Lower threshold for summaries
-            use_colnames=True
-        )
+        # Use provided frequent itemsets or compute them with lower support for summaries
+        if frequent_itemsets is None:
+            frequent_itemsets = self.compute_frequent_itemsets(df, min_support=0.05)
         
         if frequent_itemsets.empty:
             return []
@@ -130,13 +156,14 @@ class TupleRecommender:
         
         return summaries
     
-    def recommend_tuples(self, current_results: pd.DataFrame, top_k: Optional[int] = None) -> pd.DataFrame:
+    def recommend_tuples(self, current_results: pd.DataFrame, top_k: Optional[int] = None, frequent_itemsets: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """
         Recommend tuples for the next query based on the current query's results.
         
         Args:
             current_results: DataFrame with the current query's results
             top_k: Number of top tuples to recommend (overrides config value if provided)
+            frequent_itemsets: Pre-computed frequent itemsets (optional, for performance optimization)
             
         Returns:
             DataFrame with recommended tuples
@@ -151,29 +178,53 @@ class TupleRecommender:
         # Preprocess data
         processed_df = self.preprocess_data(current_results)
         
+        # If frequent_itemsets provided, use them; otherwise compute in each method
         # Depending on the method, generate recommendations
         if method == 'association_rules':
-            return self._recommend_with_association_rules(processed_df, top_k)
+            return self._recommend_with_association_rules(processed_df, top_k, frequent_itemsets)
         elif method == 'summaries':
-            return self._recommend_with_summaries(processed_df, top_k)
+            return self._recommend_with_summaries(processed_df, top_k, frequent_itemsets)
         elif method == 'hybrid':
-            return self._recommend_hybrid(processed_df, top_k)
+            # TODO: Fix this to make it look more like the contribution in paper
+            if frequent_itemsets is not None:
+                # Use provided frequent itemsets for both methods
+                rule_recs = self._recommend_with_association_rules(processed_df, top_k // 2, frequent_itemsets)
+                summary_recs = self._recommend_with_summaries(processed_df, top_k // 2, frequent_itemsets)
+                
+                # Combine recommendations
+                if rule_recs.empty:
+                    return summary_recs
+                if summary_recs.empty:
+                    return rule_recs
+                    
+                # Combine and deduplicate
+                combined = pd.concat([rule_recs, summary_recs]).drop_duplicates()
+                
+                # Limit to top_k
+                if len(combined) > top_k:
+                    combined = combined.head(top_k)
+                    
+                return combined
+            else:
+                # Use the existing hybrid method that computes frequent itemsets once
+                return self._recommend_hybrid(processed_df, top_k)
         else:
             raise ValueError(f"Unknown recommendation method: {method}")
     
-    def _recommend_with_association_rules(self, df: pd.DataFrame, top_k: int) -> pd.DataFrame:
+    def _recommend_with_association_rules(self, df: pd.DataFrame, top_k: int, frequent_itemsets: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """
         Recommend tuples using association rules.
         
         Args:
             df: Preprocessed DataFrame
             top_k: Number of tuples to recommend
+            frequent_itemsets: Pre-computed frequent itemsets (optional)
             
         Returns:
             DataFrame with recommended tuples
         """
         # Mine association rules
-        rules_df = self.mine_association_rules(df)
+        rules_df = self.mine_association_rules(df, frequent_itemsets)
         
         if rules_df.empty:
             # No rules found, return empty DataFrame
@@ -196,19 +247,20 @@ class TupleRecommender:
         
         return recommendations
     
-    def _recommend_with_summaries(self, df: pd.DataFrame, top_k: int) -> pd.DataFrame:
+    def _recommend_with_summaries(self, df: pd.DataFrame, top_k: int, frequent_itemsets: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """
         Recommend tuples using summaries.
         
         Args:
             df: Preprocessed DataFrame
             top_k: Number of tuples to recommend
+            frequent_itemsets: Pre-computed frequent itemsets (optional)
             
         Returns:
             DataFrame with recommended tuples
         """
         # Generate summaries
-        summaries = self.generate_summaries(df)
+        summaries = self.generate_summaries(df, frequent_itemsets)
         
         if not summaries:
             # No summaries found, return empty DataFrame
@@ -230,9 +282,12 @@ class TupleRecommender:
         Returns:
             DataFrame with recommended tuples
         """
-        # Get recommendations from both methods
-        rule_recs = self._recommend_with_association_rules(df, top_k // 2)
-        summary_recs = self._recommend_with_summaries(df, top_k // 2)
+        # Compute frequent itemsets once for both methods
+        frequent_itemsets = self.compute_frequent_itemsets(df)
+        
+        # Get recommendations from both methods using shared frequent itemsets
+        rule_recs = self._recommend_with_association_rules(df, top_k // 2, frequent_itemsets)
+        summary_recs = self._recommend_with_summaries(df, top_k // 2, frequent_itemsets)
         
         # Combine recommendations
         if rule_recs.empty:
@@ -251,40 +306,39 @@ class TupleRecommender:
     
     def _prepare_data_for_fpgrowth(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Convert a DataFrame to a format suitable for fpgrowth algorithm.
+        Convert a DataFrame to a format suitable for fpgrowth algorithm using TransactionEncoder.
         
         Args:
             df: Input DataFrame
             
         Returns:
-            One-hot encoded DataFrame
+            Encoded DataFrame suitable for fpgrowth
         """
-        # Create a copy to avoid modifying the original
-        result_df = df.copy()
-        
-        # For each column, create binary column for each unique value
-        one_hot_data = {}
-        
-        for col in df.columns:
-            # Skip columns with too many unique values
-            if df[col].nunique() > 100:  # Arbitrary threshold to avoid explosion of columns
-                continue
-                
-            # Get unique values for this column
-            unique_values = df[col].dropna().unique()
-            
-            # Create binary columns for each value
-            for val in unique_values:
-                # Create column name by combining column and value
-                col_name = f"{col}_{val}"
-                one_hot_data[col_name] = (df[col] == val).astype(int)
-        
-        # Create one-hot DataFrame
-        if one_hot_data:
-            return pd.DataFrame(one_hot_data)
-        else:
-            # If no suitable columns, return empty DataFrame
+        if df.empty:
             return pd.DataFrame()
+        
+        # Filter out columns with too many unique values to prevent memory explosion
+        # filtered_df = df.copy()
+        # for col in df.columns:
+        #     if df[col].nunique() > 100:  # Arbitrary threshold to avoid explosion of columns
+        #         filtered_df = filtered_df.drop(columns=[col])
+        
+        # if filtered_df.empty:
+        #     return pd.DataFrame()
+        
+        df = self.prepend_column_names(df)
+        
+        # Convert DataFrame to transactions using the original format (column_value)
+        # This creates meaningful item identifiers that can be sorted
+        transactions = df.to_dict(orient="records")
+        attributes = list(df.columns)
+        transaction_items = [list(t.values()) for t in transactions]
+        # Use TransactionEncoder for efficient one-hot encoding
+        te = TransactionEncoder()
+        te_ary = te.fit(transaction_items).transform(transaction_items)
+        # Create encoded DataFrame
+        encoded_df = pd.DataFrame(te_ary, columns=te.columns_)
+        return encoded_df, attributes
     
     def _generate_tuples_from_rules(self, rules_df: pd.DataFrame, top_k: int) -> pd.DataFrame:
         """
@@ -385,4 +439,19 @@ class TupleRecommender:
         if len(df) > top_k:
             df = df.head(top_k)
             
+        return df
+
+
+    def prepend_column_names(self, df):
+        """
+        Prepend the column name to all the values in the DataFrame.
+        
+        Parameters:
+        df (pd.DataFrame): The DataFrame containing the data.
+        
+        Returns:
+        pd.DataFrame: DataFrame with column names prepended to the values.
+        """
+        for column in df.columns:
+            df[column] = df[column].apply(lambda x: f"{column}_{x}")
         return df
