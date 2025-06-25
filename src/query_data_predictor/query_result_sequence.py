@@ -3,10 +3,11 @@ A module for iterating over pairs of query results in a session, for prediction 
 """
 
 import pandas as pd
+from query_data_predictor.dataloader import DataLoader
 from typing import Iterator, Tuple, Any
 
 class QueryResultSequence:
-    def __init__(self, dataloader):
+    def __init__(self, dataloader: DataLoader):
         """
         Initialize with a DataLoader instance that provides access to session metadata and results.
         Args:
