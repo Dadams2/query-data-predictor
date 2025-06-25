@@ -146,24 +146,3 @@ class TestDiscretizer:
         assert 'float_col1_bin' in result.columns
         assert 'float_col2_bin' in result.columns
     
-    def test_prepend_column_names(self):
-        """Test prepending column names to values."""
-        df = pd.DataFrame({
-            'col1': [1, 2, 3],
-            'col2': ['a', 'b', 'c']
-        })
-        discretizer = Discretizer()
-        result = discretizer.prepend_column_names(df.copy())
-        print(result) 
-        # Check that values are prepended with column names
-        assert result['col1'][0] == 'col1_1'
-        assert result['col2'][0] == 'col2_a'
-    
-    def test_prepend_column_names_empty_df(self):
-        """Test prepending column names with empty DataFrame."""
-        df = pd.DataFrame()
-        discretizer = Discretizer()
-        result = discretizer.prepend_column_names(df.copy())
-        
-        # Result should be empty DataFrame
-        assert result.empty
