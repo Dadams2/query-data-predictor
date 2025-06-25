@@ -90,17 +90,3 @@ class Discretizer:
         
         self.save_params()
         return df
-
-    def prepend_column_names(self, df):
-        """
-        Prepend the column name to all the values in the DataFrame.
-        
-        Parameters:
-        df (pd.DataFrame): The DataFrame containing the data.
-        
-        Returns:
-        pd.DataFrame: DataFrame with column names prepended to the values.
-        """
-        for column in df.columns:
-            df[column] = df[column].apply(lambda x: f"{column}_{x}")
-        return df
