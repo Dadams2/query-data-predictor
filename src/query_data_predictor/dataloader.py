@@ -20,7 +20,7 @@ class DataLoader():
         self.metadata = pd.read_csv(self.file_path)
         self.memory_cache = {}
     
-
+    # TODO LRU cache for results per session or something
     def get_results_for_query(self, session_id: int, query_id: int) -> np.ndarray:
         """
         Get the results for a specific query in a session.
@@ -32,26 +32,37 @@ class DataLoader():
         Returns:
             The query results as a numpy array
         """
+        # Find the specific query in the metadata
+
         if session_id not in self.memory_cache:
             self.get_results_for_session(session_id)
         
         data = self.memory_cache[session_id]
-        # Check if the data is a DataFrame (from polars or pandas)
-        if hasattr(data, 'filter'):
-            # For polars DataFrame
-            # Todo: make query position a global constant somewhere
-            # print(data)
-            filtered_data = data[data['query_position'] == query_id]
-            if filtered_data.size == 0:
-                raise ValueError(f"Query ID {query_id} not found in session {session_id}")
-            return filtered_data
-        elif isinstance(data, dict):
-            # For dictionary-based data
-            if query_id not in data:
-                raise ValueError(f"Query ID {query_id} not found in session {session_id}")
-            return data[query_id]
-        else:
-            raise TypeError(f"Unsupported data type: {type(data)}")
+
+        query_rows = data[
+            (data["session_id"] == session_id) & 
+            (data["query_position"] == query_id)
+        ]
+        
+        if len(query_rows) == 0:
+            raise ValueError(f"Query ID {query_id} not found in session {session_id}")
+        
+        # Get the results file path
+        if "results_filepath" not in data.columns:
+            raise ValueError("Metadata does not contain a results_filepath column")
+        
+        results_file_path = query_rows["results_filepath"].values[0]
+        results_path = self.dataset_dir / results_file_path
+        
+        if not results_path.exists():
+            raise FileNotFoundError(f"Results file not found: {results_path}")
+        
+        # Load and return the actual query results
+        with open(results_path, "rb") as f:
+            results = pickle.load(f)
+        
+        return results
+
 
     def get_sessions(self):
         """
