@@ -11,100 +11,7 @@ REAL_METADATA = pathlib.Path(__file__).parent.parent / "data" / "datasets"
 
 from query_data_predictor.dataloader import DataLoader
 
-    
-@pytest.fixture
-def sample_dataset_dir():
-    """Create a temporary directory with sample data for testing."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Create a metadata.csv file
-        metadata_path = os.path.join(temp_dir, "metadata.csv")
-        metadata_df = pd.DataFrame({
-            "session_id": [1001, 1002, 1003],
-            "path": [
-                os.path.join(temp_dir, "query_prediction_session_1001.pkl"),
-                os.path.join(temp_dir, "query_prediction_session_1002.pkl"), 
-                os.path.join(temp_dir, "query_prediction_session_1003.pkl")
-            ]
-        })
-        metadata_df.to_csv(metadata_path, index=False)
-        
-        # Create query_results subdirectory for result files
-        results_dir = os.path.join(temp_dir, "query_results")
-        os.makedirs(results_dir)
-        
-        # Create sample result DataFrames
-        result1_df = pd.DataFrame({
-            "ra": [359.78, 357.68, 358.24],
-            "dec": [36.23, 33.33, 35.23],
-            "type": [3, 3, 3],
-            "modelmag_g": [12.08, 11.76, 11.72],
-            "objid": [758874373140775052, 758874297454690378, 758874298527646095]
-        })
-        result1_path = os.path.join(results_dir, "results_session_1001_query_0.pkl")
-        with open(result1_path, "wb") as f:
-            pickle.dump(result1_df, f)
-            
-        result2_df = pd.DataFrame({
-            "ra": [360.12, 358.45],
-            "dec": [37.45, 34.67], 
-            "type": [3, 3],
-            "modelmag_g": [13.21, 12.34],
-            "objid": [758874373140775999, 758874297454691000]
-        })
-        result2_path = os.path.join(results_dir, "results_session_1001_query_1.pkl")
-        with open(result2_path, "wb") as f:
-            pickle.dump(result2_df, f)
-            
-        result3_df = pd.DataFrame({
-            "ra": [361.45, 359.23, 357.89],
-            "dec": [38.12, 35.78, 33.45],
-            "type": [3, 3, 3], 
-            "modelmag_g": [14.56, 13.78, 12.99],
-            "objid": [758874373140776111, 758874297454691222, 758874298527647333]
-        })
-        result3_path = os.path.join(results_dir, "results_session_1002_query_0.pkl")
-        with open(result3_path, "wb") as f:
-            pickle.dump(result3_df, f)
-        
-        # Create session DataFrames that match the real structure
-        session1_df = pd.DataFrame({
-            "session_id": [1001, 1001],
-            "query_position": [0, 1],
-            "current_query": ["SELECT ra,dec,type FROM PhotoObj WHERE ra > 359", "SELECT ra,dec,type FROM PhotoObj WHERE dec > 35"],
-            "results_filepath": [result1_path, result2_path],
-            "query_type": ["SELECT", "SELECT"],
-            "query_length": [45, 46],
-            "token_count": [8, 8],
-            "has_join": [False, False],
-            "has_where": [True, True],
-            "result_column_count": [5, 5],
-            "result_row_count": [3, 2]
-        })
-        with open(os.path.join(temp_dir, "query_prediction_session_1001.pkl"), "wb") as f:
-            pickle.dump(session1_df, f)
-        
-        session2_df = pd.DataFrame({
-            "session_id": [1002],
-            "query_position": [0],
-            "current_query": ["SELECT ra,dec,type FROM PhotoObj WHERE ra < 362"],
-            "results_filepath": [result3_path],
-            "query_type": ["SELECT"],
-            "query_length": [45],
-            "token_count": [8],
-            "has_join": [False],
-            "has_where": [True],
-            "result_column_count": [5],
-            "result_row_count": [3]
-        })
-        with open(os.path.join(temp_dir, "query_prediction_session_1002.pkl"), "wb") as f:
-            pickle.dump(session2_df, f)
-            
-        # Create an empty session for error testing
-        session3_df = pd.DataFrame()
-        with open(os.path.join(temp_dir, "query_prediction_session_1003.pkl"), "wb") as f:
-            pickle.dump(session3_df, f)
-            
-        yield temp_dir
+# The sample_dataset_dir fixture is now in conftest.py
 
 def test_init(sample_dataset_dir):
     """Test initialization of the DataLoader."""
@@ -126,7 +33,7 @@ def test_get_results_for_session(sample_dataset_dir):
     # Test retrieving session DataFrame
     session_data = loader.get_results_for_session(1001)
     assert isinstance(session_data, pd.DataFrame)
-    assert len(session_data) == 2  # Session 1001 has 2 queries
+    assert len(session_data) == 4  # Session 1001 has 4 queries
     assert "session_id" in session_data.columns
     assert "query_position" in session_data.columns
     assert "results_filepath" in session_data.columns
@@ -134,7 +41,7 @@ def test_get_results_for_session(sample_dataset_dir):
     # Test retrieving another session
     session_data2 = loader.get_results_for_session(1002)
     assert isinstance(session_data2, pd.DataFrame)
-    assert len(session_data2) == 1  # Session 1002 has 1 query
+    assert len(session_data2) == 3  # Session 1002 has 3 queries
     
     # Test caching
     assert 1001 in loader.memory_cache
@@ -161,10 +68,15 @@ def test_get_results_for_query(sample_dataset_dir):
     assert isinstance(result2, pd.DataFrame)
     assert len(result2) == 2  # result2_df has 2 rows
     
-    # Test with different session
+    # Test with different session and query with gaps
     result3 = loader.get_results_for_query(1002, 0)
     assert isinstance(result3, pd.DataFrame)
-    assert len(result3) == 3  # result3_df has 3 rows
+    assert len(result3) == 3  # result5_df has 3 rows
+    
+    # Test with query position 3 in session 1001
+    result4 = loader.get_results_for_query(1001, 3)
+    assert isinstance(result4, pd.DataFrame)
+    assert len(result4) == 3  # result3_df has 3 rows
     
     # Test error handling for non-existent query
     with pytest.raises(ValueError):
@@ -184,7 +96,7 @@ def test_metadata_column_handling(sample_dataset_dir):
     # The method should still work with the new column name
     session_data = loader.get_results_for_session(1001)
     assert isinstance(session_data, pd.DataFrame)
-    assert len(session_data) == 2
+    assert len(session_data) == 4
     
     # Test with no valid column name
     loader.metadata.rename(columns={"filepath": "invalid_column"}, inplace=True)
@@ -250,6 +162,10 @@ def test_session_structure(sample_dataset_dir):
     assert session_data["query_position"].iloc[0] == 0
     assert session_data["query_type"].iloc[0] == "SELECT"
     assert session_data["has_where"].iloc[0] == True
+    
+    # Check that query positions have gaps as expected
+    query_positions = sorted(session_data["query_position"].tolist())
+    assert query_positions == [0, 1, 3, 5]  # Has gaps
 
 def test_sample_data():
     """Test the sample_data method."""

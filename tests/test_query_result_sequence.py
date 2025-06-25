@@ -9,57 +9,7 @@ from unittest.mock import MagicMock, patch
 from query_data_predictor.query_result_sequence import QueryResultSequence
 from query_data_predictor.dataloader import DataLoader
 
-
-@pytest.fixture
-def sequence_test_dataset_dir():
-    """Create a temporary directory with sample data specifically for sequence testing."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Create a metadata.csv file
-        metadata_path = os.path.join(temp_dir, "metadata.csv")
-        metadata_df = pd.DataFrame({
-            "session_id": [1001, 1002, 1003],
-            "path": ["session_1001.pkl", "session_1002.pkl", "session_1003.pkl"]
-        })
-        metadata_df.to_csv(metadata_path, index=False)
-        
-        # Session 1001: DataFrame-based data with sequential query IDs
-        df_data_1 = pd.DataFrame({
-            "query_position": [1, 2, 3, 5],  # Sequential with gap
-            "result": [
-                [10, 20, 30], 
-                [40, 50, 60], 
-                [70, 80, 90], 
-                [100, 110, 120]
-            ],
-            "other_col": ["w", "x", "y", "z"]
-        })
-        with open(os.path.join(temp_dir, "session_1001.pkl"), "wb") as f:
-            pickle.dump(df_data_1, f)
-        
-        # Session 1002: DataFrame-based data 
-        df_data_2 = pd.DataFrame({
-            "query_position": [0, 1, 2, 4],
-            "result": [
-                [1, 2, 3], 
-                [4, 5, 6], 
-                [7, 8, 9], 
-                [10, 11, 12]
-            ],
-            "other_col": ["a", "b", "c", "d"]
-        })
-        with open(os.path.join(temp_dir, "session_1002.pkl"), "wb") as f:
-            pickle.dump(df_data_2, f)
-            
-        # Session 1003: Single query (edge case)
-        single_query_data = pd.DataFrame({
-            "query_position": [0],
-            "result": [[1, 2, 3]],
-            "other_col": ["single"]
-        })
-        with open(os.path.join(temp_dir, "session_1003.pkl"), "wb") as f:
-            pickle.dump(single_query_data, f)
-            
-        yield temp_dir
+# The sample_dataset_dir fixture is now shared in conftest.py
 
 
 @pytest.fixture
@@ -67,19 +17,37 @@ def mock_dataloader():
     """Create a mock DataLoader for testing without file I/O."""
     mock_loader = MagicMock(spec=DataLoader)
     
-    # Mock session data - DataFrame format only
+    # Mock session data - DataFrame format matching real structure
     mock_session_data = {
         "session_1": pd.DataFrame({
+            "session_id": ["session_1", "session_1", "session_1"],
             "query_position": [1, 2, 3],
-            "result": [[1, 2, 3], [4, 5, 6], [7, 8, 9]],
-            "other_col": ["a", "b", "c"]
+            "current_query": ["SELECT * FROM table1", "SELECT * FROM table2", "SELECT * FROM table3"],
+            "results_filepath": ["/path/to/results1.pkl", "/path/to/results2.pkl", "/path/to/results3.pkl"],
+            "query_type": ["SELECT", "SELECT", "SELECT"],
+            "result_column_count": [5, 4, 6],
+            "result_row_count": [10, 8, 12]
         }),
         "session_2": pd.DataFrame({
+            "session_id": ["session_2", "session_2", "session_2"],
             "query_position": [0, 2, 4],
-            "result": [[10, 11], [12, 13], [14, 15]],
-            "other_col": ["x", "y", "z"]
+            "current_query": ["SELECT * FROM tableA", "SELECT * FROM tableB", "SELECT * FROM tableC"],
+            "results_filepath": ["/path/to/resultsA.pkl", "/path/to/resultsB.pkl", "/path/to/resultsC.pkl"],
+            "query_type": ["SELECT", "SELECT", "SELECT"],
+            "result_column_count": [3, 2, 4],
+            "result_row_count": [5, 3, 7]
         }),
-        "empty_session": pd.DataFrame(columns=["query_position", "result", "other_col"])
+        "empty_session": pd.DataFrame(columns=["session_id", "query_position", "current_query", "results_filepath"])
+    }
+    
+    # Mock query results - return sample DataFrames
+    mock_query_results = {
+        ("session_1", 1): pd.DataFrame({"ra": [1.1, 1.2], "dec": [2.1, 2.2], "objid": [101, 102]}),
+        ("session_1", 2): pd.DataFrame({"ra": [2.1, 2.2, 2.3], "dec": [3.1, 3.2, 3.3], "objid": [201, 202, 203]}),
+        ("session_1", 3): pd.DataFrame({"ra": [3.1], "dec": [4.1], "objid": [301]}),
+        ("session_2", 0): pd.DataFrame({"ra": [0.1, 0.2], "dec": [1.1, 1.2], "objid": [1, 2]}),
+        ("session_2", 2): pd.DataFrame({"ra": [2.5], "dec": [3.5], "objid": [25]}),
+        ("session_2", 4): pd.DataFrame({"ra": [4.1, 4.2, 4.3], "dec": [5.1, 5.2, 5.3], "objid": [401, 402, 403]}),
     }
     
     def mock_get_results_for_session(session_id):
@@ -88,11 +56,10 @@ def mock_dataloader():
         raise ValueError(f"Session {session_id} not found")
     
     def mock_get_results_for_query(session_id, query_id):
-        session_data = mock_get_results_for_session(session_id)
-        filtered_data = session_data[session_data['query_position'] == query_id]
-        if len(filtered_data) == 0:
-            raise ValueError(f"Query {query_id} not found in session {session_id}")
-        return filtered_data
+        key = (session_id, query_id)
+        if key in mock_query_results:
+            return mock_query_results[key]
+        raise ValueError(f"Query {query_id} not found in session {session_id}")
     
     mock_loader.get_results_for_session.side_effect = mock_get_results_for_session
     mock_loader.get_results_for_query.side_effect = mock_get_results_for_query
@@ -108,21 +75,26 @@ class TestQueryResultSequence:
         assert sequence.dataloader is mock_dataloader
         assert sequence.id_cache == {}
 
-    def test_get_ordered_query_ids_dataframe_data(self, sequence_test_dataset_dir):
+    def test_get_ordered_query_ids_dataframe_data(self, sample_dataset_dir):
         """Test getting ordered query IDs from DataFrame-based session data."""
-        loader = DataLoader(sequence_test_dataset_dir)
+        loader = DataLoader(sample_dataset_dir)
         sequence = QueryResultSequence(loader)
         
-        # Test with session 1001 (DataFrame data)
+        # Test with session 1001 (DataFrame data with gaps)
         query_ids = sequence.get_ordered_query_ids(1001)
         assert isinstance(query_ids, list)
-        assert set(query_ids) == {1, 2, 3, 5}  # Query positions from the DataFrame
+        assert set(query_ids) == {0, 1, 3, 5}  # Query positions from the DataFrame
         assert query_ids == sorted(query_ids)  # Should be sorted
         
         # Test caching
         assert 1001 in sequence.id_cache
         cached_ids = sequence.get_ordered_query_ids(1001)
         assert query_ids == cached_ids
+        
+        # Test with session 1002 (also has gaps)
+        query_ids_2 = sequence.get_ordered_query_ids(1002)
+        assert set(query_ids_2) == {0, 2, 4}
+        assert query_ids_2 == sorted(query_ids_2)
 
     def test_get_ordered_query_ids_empty_session(self, mock_dataloader):
         """Test getting query IDs from an empty session."""
@@ -246,34 +218,47 @@ class TestQueryResultSequence:
         with pytest.raises(IndexError, match="No future query with gap 2 from query 2 in session session_1"):
             sequence.get_query_pair_with_gap("session_1", 2, gap=2)
 
-    def test_integration_with_real_dataloader(self, sequence_test_dataset_dir):
+    def test_integration_with_real_dataloader(self, sample_dataset_dir):
         """Test integration with actual DataLoader."""
-        loader = DataLoader(sequence_test_dataset_dir)
+        loader = DataLoader(sample_dataset_dir)
         sequence = QueryResultSequence(loader)
         
-        # Test with session 1001 (DataFrame data)
+        # Test with session 1001 (DataFrame data with gaps)
         query_ids = sequence.get_ordered_query_ids(1001)
         assert len(query_ids) > 0
+        assert set(query_ids) == {0, 1, 3, 5}
         
         # Test getting query results
-        first_query_id = query_ids[0]
+        first_query_id = query_ids[0]  # Should be 0
         results = sequence.get_query_results(1001, first_query_id)
         assert results is not None
         assert isinstance(results, pd.DataFrame)
+        assert "ra" in results.columns
+        assert "dec" in results.columns
         
         # Test iteration (if there are multiple queries)
         if len(query_ids) > 1:
             pairs = list(sequence.iter_query_result_pairs(1001))
             assert isinstance(pairs, list)
+            # Should have 3 pairs: (0,1), (1,3), (3,5)
+            assert len(pairs) == 3
+            
+            # Check first pair
+            curr_id, fut_id, curr_res, fut_res = pairs[0]
+            assert curr_id == 0
+            assert fut_id == 1
+            assert isinstance(curr_res, pd.DataFrame)
+            assert isinstance(fut_res, pd.DataFrame)
 
-    def test_single_query_session(self, sequence_test_dataset_dir):
+    def test_single_query_session(self, sample_dataset_dir):
         """Test handling of sessions with only one query."""
-        loader = DataLoader(sequence_test_dataset_dir)
+        loader = DataLoader(sample_dataset_dir)
         sequence = QueryResultSequence(loader)
         
         # Session 1003 has only one query
         query_ids = sequence.get_ordered_query_ids(1003)
         assert len(query_ids) == 1
+        assert query_ids == [0]
         
         # Should return empty list for pairs since we need at least 2 queries
         pairs = list(sequence.iter_query_result_pairs(1003))
@@ -283,22 +268,31 @@ class TestQueryResultSequence:
         with pytest.raises(IndexError):
             sequence.get_query_pair_with_gap(1003, 0, gap=1)
 
-    def test_dataframe_based_session_multiple(self, sequence_test_dataset_dir):
+    def test_dataframe_based_session_multiple(self, sample_dataset_dir):
         """Test with DataFrame-based session data for multiple sessions."""
-        loader = DataLoader(sequence_test_dataset_dir)
+        loader = DataLoader(sample_dataset_dir)
         sequence = QueryResultSequence(loader)
         
-        # Test with session 1001 (DataFrame data)
+        # Test with session 1001 (DataFrame data with gaps)
         query_ids_1001 = sequence.get_ordered_query_ids(1001)
         assert len(query_ids_1001) > 0
-        expected_positions_1001 = [1, 2, 3, 5]  # From the test data
+        expected_positions_1001 = [0, 1, 3, 5]  # From the shared test data
         assert set(query_ids_1001) == set(expected_positions_1001)
         
-        # Test with session 1002 (DataFrame data)
+        # Test with session 1002 (DataFrame data with gaps)
         query_ids_1002 = sequence.get_ordered_query_ids(1002)
         assert len(query_ids_1002) > 0
-        expected_positions_1002 = [0, 1, 2, 4]  # From the test data
+        expected_positions_1002 = [0, 2, 4]  # From the shared test data
         assert set(query_ids_1002) == set(expected_positions_1002)
+        
+        # Test that we can get actual results for these queries
+        result_1001_0 = sequence.get_query_results(1001, 0)
+        assert isinstance(result_1001_0, pd.DataFrame)
+        assert "ra" in result_1001_0.columns
+        
+        result_1002_2 = sequence.get_query_results(1002, 2)
+        assert isinstance(result_1002_2, pd.DataFrame)
+        assert "ra" in result_1002_2.columns
 
     def test_caching_behavior(self, mock_dataloader):
         """Test that query ID caching works correctly."""
@@ -314,3 +308,45 @@ class TestQueryResultSequence:
         
         # DataLoader should only be called once
         mock_dataloader.get_results_for_session.assert_called_once_with("session_1")
+
+    def test_real_data_gap_behavior(self, sample_dataset_dir):
+        """Test gap behavior with realistic data that has gaps in query positions."""
+        loader = DataLoader(sample_dataset_dir)
+        sequence = QueryResultSequence(loader)
+        
+        # Session 1001 has query positions: [0, 1, 3, 5]
+        query_ids = sequence.get_ordered_query_ids(1001)
+        assert query_ids == [0, 1, 3, 5]
+        
+        # Test gap=1 pairs: (0,1), (1,3), (3,5)
+        pairs_gap1 = list(sequence.iter_query_result_pairs(1001, gap=1))
+        assert len(pairs_gap1) == 3
+        
+        curr_ids = [pair[0] for pair in pairs_gap1]
+        fut_ids = [pair[1] for pair in pairs_gap1]
+        assert curr_ids == [0, 1, 3]
+        assert fut_ids == [1, 3, 5]
+        
+        # Test gap=2 pairs: (0,3), (1,5)
+        pairs_gap2 = list(sequence.iter_query_result_pairs(1001, gap=2))
+        assert len(pairs_gap2) == 2
+        
+        curr_ids_2 = [pair[0] for pair in pairs_gap2]
+        fut_ids_2 = [pair[1] for pair in pairs_gap2]
+        assert curr_ids_2 == [0, 1]
+        assert fut_ids_2 == [3, 5]
+        
+        # Test gap=3 pairs: (0,5)
+        pairs_gap3 = list(sequence.iter_query_result_pairs(1001, gap=3))
+        assert len(pairs_gap3) == 1
+        assert pairs_gap3[0][0] == 0
+        assert pairs_gap3[0][1] == 5
+        
+        # Test that all results are proper DataFrames
+        for curr_id, fut_id, curr_res, fut_res in pairs_gap1:
+            assert isinstance(curr_res, pd.DataFrame)
+            assert isinstance(fut_res, pd.DataFrame)
+            assert not curr_res.empty
+            assert not fut_res.empty
+            assert "ra" in curr_res.columns
+            assert "ra" in fut_res.columns
