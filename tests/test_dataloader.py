@@ -19,31 +19,90 @@ def sample_dataset_dir():
         # Create a metadata.csv file
         metadata_path = os.path.join(temp_dir, "metadata.csv")
         metadata_df = pd.DataFrame({
-            "session_id": [1001, 1002, 1003],  # Use integers, not strings
-            "path": ["session_1001.pkl", "session_1002.pkl", "session_1003.pkl"]
+            "session_id": [1001, 1002, 1003],
+            "path": [
+                os.path.join(temp_dir, "query_prediction_session_1001.pkl"),
+                os.path.join(temp_dir, "query_prediction_session_1002.pkl"), 
+                os.path.join(temp_dir, "query_prediction_session_1003.pkl")
+            ]
         })
         metadata_df.to_csv(metadata_path, index=False)
         
-        # Create sample pickle files
-        # Dict-based sample data
-        dict_data = {
-            1: np.array([1, 2, 3]),
-            2: np.array([4, 5, 6])
-        }
-        with open(os.path.join(temp_dir, "session_1001.pkl"), "wb") as f:
-            pickle.dump(dict_data, f)
+        # Create query_results subdirectory for result files
+        results_dir = os.path.join(temp_dir, "query_results")
+        os.makedirs(results_dir)
         
-        # Polars DataFrame sample data
-        data = pd.DataFrame({
-            "query_position": [1, 2, 3],
-            "result": [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+        # Create sample result DataFrames
+        result1_df = pd.DataFrame({
+            "ra": [359.78, 357.68, 358.24],
+            "dec": [36.23, 33.33, 35.23],
+            "type": [3, 3, 3],
+            "modelmag_g": [12.08, 11.76, 11.72],
+            "objid": [758874373140775052, 758874297454690378, 758874298527646095]
         })
-        with open(os.path.join(temp_dir, "session_1002.pkl"), "wb") as f:
-            pickle.dump(data, f)
+        result1_path = os.path.join(results_dir, "results_session_1001_query_0.pkl")
+        with open(result1_path, "wb") as f:
+            pickle.dump(result1_df, f)
             
-        # Create a file that doesn't exist in metadata for error testing
-        with open(os.path.join(temp_dir, "session_1003.pkl"), "wb") as f:
-            pickle.dump({}, f)
+        result2_df = pd.DataFrame({
+            "ra": [360.12, 358.45],
+            "dec": [37.45, 34.67], 
+            "type": [3, 3],
+            "modelmag_g": [13.21, 12.34],
+            "objid": [758874373140775999, 758874297454691000]
+        })
+        result2_path = os.path.join(results_dir, "results_session_1001_query_1.pkl")
+        with open(result2_path, "wb") as f:
+            pickle.dump(result2_df, f)
+            
+        result3_df = pd.DataFrame({
+            "ra": [361.45, 359.23, 357.89],
+            "dec": [38.12, 35.78, 33.45],
+            "type": [3, 3, 3], 
+            "modelmag_g": [14.56, 13.78, 12.99],
+            "objid": [758874373140776111, 758874297454691222, 758874298527647333]
+        })
+        result3_path = os.path.join(results_dir, "results_session_1002_query_0.pkl")
+        with open(result3_path, "wb") as f:
+            pickle.dump(result3_df, f)
+        
+        # Create session DataFrames that match the real structure
+        session1_df = pd.DataFrame({
+            "session_id": [1001, 1001],
+            "query_position": [0, 1],
+            "current_query": ["SELECT ra,dec,type FROM PhotoObj WHERE ra > 359", "SELECT ra,dec,type FROM PhotoObj WHERE dec > 35"],
+            "results_filepath": [result1_path, result2_path],
+            "query_type": ["SELECT", "SELECT"],
+            "query_length": [45, 46],
+            "token_count": [8, 8],
+            "has_join": [False, False],
+            "has_where": [True, True],
+            "result_column_count": [5, 5],
+            "result_row_count": [3, 2]
+        })
+        with open(os.path.join(temp_dir, "query_prediction_session_1001.pkl"), "wb") as f:
+            pickle.dump(session1_df, f)
+        
+        session2_df = pd.DataFrame({
+            "session_id": [1002],
+            "query_position": [0],
+            "current_query": ["SELECT ra,dec,type FROM PhotoObj WHERE ra < 362"],
+            "results_filepath": [result3_path],
+            "query_type": ["SELECT"],
+            "query_length": [45],
+            "token_count": [8],
+            "has_join": [False],
+            "has_where": [True],
+            "result_column_count": [5],
+            "result_row_count": [3]
+        })
+        with open(os.path.join(temp_dir, "query_prediction_session_1002.pkl"), "wb") as f:
+            pickle.dump(session2_df, f)
+            
+        # Create an empty session for error testing
+        session3_df = pd.DataFrame()
+        with open(os.path.join(temp_dir, "query_prediction_session_1003.pkl"), "wb") as f:
+            pickle.dump(session3_df, f)
             
         yield temp_dir
 
@@ -64,17 +123,18 @@ def test_get_results_for_session(sample_dataset_dir):
     """Test retrieving results for a session."""
     loader = DataLoader(sample_dataset_dir)
     
-    # Test retrieving dict-based data
-    dict_data = loader.get_results_for_session(1001)
-    assert isinstance(dict_data, dict)
-    assert 1 in dict_data
-    assert 2 in dict_data
-    assert np.array_equal(dict_data[1], np.array([1, 2, 3]))
+    # Test retrieving session DataFrame
+    session_data = loader.get_results_for_session(1001)
+    assert isinstance(session_data, pd.DataFrame)
+    assert len(session_data) == 2  # Session 1001 has 2 queries
+    assert "session_id" in session_data.columns
+    assert "query_position" in session_data.columns
+    assert "results_filepath" in session_data.columns
     
-    # Test retrieving DataFrame-based data
-    df_data = loader.get_results_for_session(1002)
-    assert hasattr(df_data, "filter")  # Check if it's a DataFrame
-    assert df_data.shape[0] == 3
+    # Test retrieving another session
+    session_data2 = loader.get_results_for_session(1002)
+    assert isinstance(session_data2, pd.DataFrame)
+    assert len(session_data2) == 1  # Session 1002 has 1 query
     
     # Test caching
     assert 1001 in loader.memory_cache
@@ -88,26 +148,31 @@ def test_get_results_for_query(sample_dataset_dir):
     """Test retrieving results for a specific query."""
     loader = DataLoader(sample_dataset_dir)
     
-    # Test with dictionary data
-    result1 = loader.get_results_for_query(1001, 1)
-    assert np.array_equal(result1, np.array([1, 2, 3]))
+    # Test retrieving query results (should return actual result DataFrames)
+    result1 = loader.get_results_for_query(1001, 0)
+    assert isinstance(result1, pd.DataFrame)
+    assert len(result1) == 3  # result1_df has 3 rows
+    assert "ra" in result1.columns
+    assert "dec" in result1.columns
+    assert "objid" in result1.columns
     
-    # Test with DataFrame data
-    result2 = loader.get_results_for_query(1002, 1)
-    assert len(result2) == 1
+    # Test retrieving another query result
+    result2 = loader.get_results_for_query(1001, 1)
+    assert isinstance(result2, pd.DataFrame)
+    assert len(result2) == 2  # result2_df has 2 rows
     
-    # Test error handling for non-existent query in dictionary
+    # Test with different session
+    result3 = loader.get_results_for_query(1002, 0)
+    assert isinstance(result3, pd.DataFrame)
+    assert len(result3) == 3  # result3_df has 3 rows
+    
+    # Test error handling for non-existent query
     with pytest.raises(ValueError):
         loader.get_results_for_query(1001, 100000)
         
-    # Test error handling for non-existent query in DataFrame
+    # Test error handling for non-existent session
     with pytest.raises(ValueError):
-        loader.get_results_for_query(1002, -20)
-        
-    # Test caching behavior - modifying the cache for a new query
-    loader.memory_cache[1003] = {20: np.array([10, 20, 30])}
-    result3 = loader.get_results_for_query(1003, 20)
-    assert np.array_equal(result3, np.array([10, 20, 30]))
+        loader.get_results_for_query(9999, 0)
 
 def test_metadata_column_handling(sample_dataset_dir):
     """Test handling of different metadata column names."""
@@ -117,9 +182,9 @@ def test_metadata_column_handling(sample_dataset_dir):
     loader.metadata.rename(columns={"path": "filepath"}, inplace=True)
     
     # The method should still work with the new column name
-    dict_data = loader.get_results_for_session(1001)
-    assert isinstance(dict_data, dict)
-    assert 1 in dict_data
+    session_data = loader.get_results_for_session(1001)
+    assert isinstance(session_data, pd.DataFrame)
+    assert len(session_data) == 2
     
     # Test with no valid column name
     loader.metadata.rename(columns={"filepath": "invalid_column"}, inplace=True)
@@ -133,7 +198,7 @@ def test_file_not_found(sample_dataset_dir):
         metadata_path = os.path.join(temp_dir, "metadata.csv")
         metadata_df = pd.DataFrame({
             "session_id": [1001],
-            "path": ["nonexistent.pkl"]
+            "path": [os.path.join(temp_dir, "nonexistent.pkl")]
         })
         metadata_df.to_csv(metadata_path, index=False)
         
@@ -143,6 +208,48 @@ def test_file_not_found(sample_dataset_dir):
         # Test that the appropriate error is raised
         with pytest.raises(FileNotFoundError):
             loader.get_results_for_session(1001)
+
+def test_query_result_file_structure(sample_dataset_dir):
+    """Test that query result files are properly structured and accessible."""
+    loader = DataLoader(sample_dataset_dir)
+    
+    # Test that we can retrieve specific query results
+    result = loader.get_results_for_query(1001, 0)
+    assert isinstance(result, pd.DataFrame)
+    assert "ra" in result.columns
+    assert "dec" in result.columns
+    assert "modelmag_g" in result.columns
+    
+    # Verify the data values match what we put in
+    assert result.iloc[0]["ra"] == 359.78
+    assert result.iloc[0]["objid"] == 758874373140775052
+    
+    # Test another query in the same session
+    result2 = loader.get_results_for_query(1001, 1)
+    assert isinstance(result2, pd.DataFrame)
+    assert len(result2) == 2
+    assert result2.iloc[0]["ra"] == 360.12
+
+def test_session_structure(sample_dataset_dir):
+    """Test that session files contain the expected structure."""
+    loader = DataLoader(sample_dataset_dir)
+    
+    session_data = loader.get_results_for_session(1001)
+    
+    # Check that all expected columns are present
+    expected_columns = ["session_id", "query_position", "current_query", 
+                       "results_filepath", "query_type", "query_length", 
+                       "token_count", "has_join", "has_where", 
+                       "result_column_count", "result_row_count"]
+    
+    for col in expected_columns:
+        assert col in session_data.columns, f"Missing column: {col}"
+    
+    # Check data types and values
+    assert session_data["session_id"].iloc[0] == 1001
+    assert session_data["query_position"].iloc[0] == 0
+    assert session_data["query_type"].iloc[0] == "SELECT"
+    assert session_data["has_where"].iloc[0] == True
 
 def test_sample_data():
     """Test the sample_data method."""
