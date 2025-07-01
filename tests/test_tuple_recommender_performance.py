@@ -9,7 +9,7 @@ import psutil
 import os
 from pathlib import Path
 from fixtures import sample_config
-from query_data_predictor.tuple_recommender import TupleRecommender
+from query_data_predictor.recommenders.tuple_recommender import TupleRecommender
 from query_data_predictor.dataloader import DataLoader
 from query_data_predictor.query_result_sequence import QueryResultSequence
 
@@ -36,7 +36,7 @@ class TestTupleRecommenderPerformance:
         return DataLoader(dataset_dir)
     
     @pytest.fixture
-    def query_sequence(self, dataloader):
+    def query_result_sequence(self, dataloader):
         """Create a QueryResultSequence instance."""
         return QueryResultSequence(dataloader)
     
@@ -83,7 +83,7 @@ class TestTupleRecommenderPerformance:
         process = psutil.Process(os.getpid())
         return process.memory_info().rss / 1024 / 1024
     
-    def test_performance_with_first_session(self, dataloader, query_sequence, recommender):
+    def test_performance_with_first_session(self, dataloader, query_result_sequence, recommender):
         """Test performance using the first available session."""
         # Get available sessions
         sessions = dataloader.get_sessions()
@@ -96,7 +96,7 @@ class TestTupleRecommenderPerformance:
         print(f"\nTesting with session: {first_session}")
         
         # Get query pairs from the session
-        query_pairs = list(query_sequence.iter_query_result_pairs(first_session, gap=1))
+        query_pairs = list(query_result_sequence.iter_query_result_pairs(first_session, gap=1))
         
         if not query_pairs:
             pytest.skip(f"No valid query pairs found in session {first_session}")
@@ -211,7 +211,7 @@ class TestTupleRecommenderPerformance:
             if not method.endswith('_failed'):
                 assert avg_memory < 500.0, f"Method {method} uses too much memory: {avg_memory:.2f}MB average"
 
-    def test_scalability_analysis(self, dataloader, query_sequence, recommender):
+    def test_scalability_analysis(self, dataloader, query_result_sequence, recommender):
         """Test how performance scales with data size."""
         sessions = dataloader.get_sessions()
         
@@ -228,7 +228,7 @@ class TestTupleRecommenderPerformance:
         
         for session in sessions[:3]:  # Test first 3 sessions
             try:
-                query_pairs = list(query_sequence.iter_query_result_pairs(session, gap=1))
+                query_pairs = list(query_result_sequence.iter_query_result_pairs(session, gap=1))
                 if not query_pairs:
                     continue
                     
@@ -283,7 +283,7 @@ class TestTupleRecommenderPerformance:
         assert time_per_row.max() < 0.1, f"Time per row too high: {time_per_row.max():.6f}s"
         assert memory_per_row.max() < 1.0, f"Memory per row too high: {memory_per_row.max():.4f}MB"
     
-    def test_config_impact_on_performance(self, dataloader, query_sequence):
+    def test_config_impact_on_performance(self, dataloader, query_result_sequence):
         """Test how different configuration parameters impact performance."""
         sessions = dataloader.get_sessions()
         
@@ -291,7 +291,7 @@ class TestTupleRecommenderPerformance:
             pytest.skip("No sessions found in dataset")
         
         # Get test data
-        query_pairs = list(query_sequence.iter_query_result_pairs(sessions[0], gap=1))
+        query_pairs = list(query_result_sequence.iter_query_result_pairs(sessions[0], gap=1))
         if not query_pairs:
             pytest.skip("No query pairs found")
         
@@ -426,7 +426,7 @@ def main():
         dataloader = DataLoader(dataset_dir)
         
         # Create query sequence
-        query_sequence = QueryResultSequence(dataloader)
+        query_result_sequence = QueryResultSequence(dataloader)
         
         # Create performance config manually
         performance_config = {
@@ -464,7 +464,7 @@ def main():
         print("TEST 1: Performance with first session")
         print("="*60)
         try:
-            test_instance.test_performance_with_first_session(dataloader, query_sequence, recommender)
+            test_instance.test_performance_with_first_session(dataloader, query_result_sequence, recommender)
             print("✓ Test 1 completed successfully")
         except Exception as e:
             print(f"✗ Test 1 failed: {e}")

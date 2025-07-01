@@ -8,9 +8,9 @@ from typing import List, Dict, Set, Tuple, Any, Union, Optional
 from mlxtend.frequent_patterns import fpgrowth
 from mlxtend.preprocessing import TransactionEncoder
 
-from query_data_predictor.discretizer import Discretizer
-from query_data_predictor.association_interestingness import AssociationEvaluator
-from query_data_predictor.summary_interestingness import SummaryEvaluator
+from ..discretizer import Discretizer
+from ..association_interestingness import AssociationEvaluator
+from ..summary_interestingness import SummaryEvaluator
 
 
 class TupleRecommender:
