@@ -33,6 +33,9 @@ class AssociationEvaluator:
     def evaulate_df(self, transactions_df, rules_df, measure_columns=None, parallel=True, n_jobs=-1):
         """
         Computes the interestingness contribution for each transaction based on matching rules.
+        
+        This method is optimized for performance by building an index that maps items to rules,
+        avoiding the need to scan all rules for each transaction.
 
         Parameters
         ----------
@@ -58,38 +61,64 @@ class AssociationEvaluator:
         if rules_df.empty:
             return pd.Series([0] * len(transactions_df), index=transactions_df.index)
         
-        # Pre-compute rule sizes and filter valid measures to avoid recomputation
-        rule_sizes = rules_df.apply(lambda row: len(row['antecedents']) + len(row['consequents']), axis=1)
+        # Filter valid measures to avoid recomputation
         valid_measures = [m for m in measure_columns if m in rules_df.columns]
         
-        # Create lookup dictionaries for fast access
-        antecedents_list = rules_df['antecedents'].tolist()
-        consequents_list = rules_df['consequents'].tolist()
-        measure_values = {measure: rules_df[measure].tolist() for measure in valid_measures}
+        # Build an index mapping items to rules for faster lookups
+        item_to_rules = {}
+        rule_data = []
         
-        def calculate_row_score(transaction_row):
+        for i, row in rules_df.iterrows():
+            antecedents = set(row['antecedents'])
+            consequents = set(row['consequents'])
+            all_items = antecedents.union(consequents)
+            
+            # Store rule data for faster access
+            rule_info = {
+                'antecedents': antecedents,
+                'consequents': consequents,
+                'all_items': all_items,
+                'scores': {measure: row[measure] for measure in valid_measures if pd.notna(row[measure]) and row[measure] != float('inf')}
+            }
+            rule_data.append(rule_info)
+            
+            # Map each item to this rule
+            for item in all_items:
+                if item not in item_to_rules:
+                    item_to_rules[item] = []
+                item_to_rules[item].append(len(rule_data) - 1)
+        
+        def calculate_row_score_optimized(transaction_row):
             total_score = 0
-
-            for i in range(len(rules_df)):
-                # Fast set-based matching
-                if (all(transaction_row[item] for item in antecedents_list[i]) and 
-                    all(transaction_row[item] for item in consequents_list[i])):
-                    # rule_size = rule_sizes.iloc[i]
-                    for measure in valid_measures:
-                        measure_score = measure_values[measure][i]
-                        if pd.notna(measure_score) and measure_score != float('inf'):
-                            total_score += measure_score 
+            # Get active items (items that are True in this transaction)
+            active_items = [item for item, value in transaction_row.items() if value]
+            
+            # Get candidate rules (rules that involve at least one active item)
+            candidate_rule_indices = set()
+            for item in active_items:
+                if item in item_to_rules:
+                    candidate_rule_indices.update(item_to_rules[item])
+            
+            # Check only candidate rules
+            for rule_idx in candidate_rule_indices:
+                rule = rule_data[rule_idx]
+                # Check if all antecedents and consequents are satisfied
+                if (all(transaction_row.get(item, False) for item in rule['antecedents']) and 
+                    all(transaction_row.get(item, False) for item in rule['consequents'])):
+                    # Add all valid measure scores
+                    total_score += sum(rule['scores'].values())
+            
             return total_score
         
         # Use parallel processing for larger datasets if enabled
         if parallel and len(transactions_df) > 1000:
             try:
                 scores = Parallel(n_jobs=n_jobs)(
-                    delayed(calculate_row_score)(row) for _, row in transactions_df.iterrows()
+                    delayed(calculate_row_score_optimized)(row) for _, row in transactions_df.iterrows()
                 )
                 return pd.Series(scores, index=transactions_df.index)
             except ImportError:
                 print("joblib not installed. Falling back to sequential processing.")
                 
         # Standard apply for smaller datasets or when parallel is disabled
-        return transactions_df.apply(calculate_row_score, axis=1)
+        return transactions_df.apply(calculate_row_score_optimized, axis=1)
