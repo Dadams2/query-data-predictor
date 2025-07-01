@@ -10,16 +10,16 @@ experiment:
 discretization:
   enabled: true
   method: 'equal_width'  # Options: equal_width, equal_freq, kmeans
-  bins: 5
+  bins: 3  # Reduced from 5 to reduce encoded column explosion
   save_params: true
   params_path: 'discretization_params.pkl'
 
 association_rules:
   enabled: true
-  min_support: 0.1
+  min_support: 0.3  # Increased to reduce rule explosion on large datasets
   metric: 'confidence'  # Options: support, confidence, lift, leverage, conviction
-  min_threshold: 0.7
-  max_len: null  # Maximum length of rules, null for no limit
+  min_threshold: 0.8  # Increased threshold for better quality rules
+  max_len: 3  # Limit rule length to prevent exponential explosion
 
 summaries:
   enabled: true
