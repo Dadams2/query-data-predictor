@@ -164,6 +164,11 @@ class TupleRecommender:
         - Summaries: Use summary-based interestingness (variance, shannon entropy, etc.)
         - Hybrid: Combine both approaches with configurable weights
         
+        For large datasets, applies performance optimizations:
+        - Sampling for datasets with > 1000 rows
+        - Early termination for very large datasets
+        - Parallel processing when available
+        
         Args:
             df: Preprocessed DataFrame with tuples
             frequent_itemsets: DataFrame with frequent itemsets from FP-Growth
@@ -171,28 +176,64 @@ class TupleRecommender:
         Returns:
             Series with interestingness scores for each tuple
         """
+        # Handle edge case with very small datasets
+        if len(df) < 2:
+            # For single tuple, return neutral score
+            return pd.Series([1.0] * len(df), index=df.index)
+        
+        # Performance optimization for large datasets
+        use_sampling = len(df) > 1000
+        sample_size = min(1000, len(df)) if use_sampling else len(df)
+        
         # Get configuration for scoring
         method = self.config.get('recommendation', {}).get('method', 'hybrid')
         alpha = 0.5  # Weight for association rules
         beta = 0.5   # Weight for summaries
         
-        # Initialize scores
+        # Initialize scores with default values
         rule_scores = pd.Series([0.0] * len(df), index=df.index)
         summary_scores = pd.Series([0.0] * len(df), index=df.index)
+        
+        # Apply sampling if needed
+        if use_sampling:
+            sample_indices = np.random.choice(df.index, size=sample_size, replace=False)
+            sample_df = df.loc[sample_indices]
+            print(f"Using sampling for large dataset: {len(df)} -> {sample_size} rows")
+        else:
+            sample_df = df
+            sample_indices = df.index
         
         # Compute association rule scores if enabled
         if method in ['association_rules', 'hybrid'] and self.config.get('association_rules', {}).get('enabled', True):
             try:
-                rule_scores = self._compute_association_rule_scores(df, frequent_itemsets)
+                sample_rule_scores = self._compute_association_rule_scores(sample_df, frequent_itemsets)
+                if use_sampling:
+                    # For non-sampled tuples, use mean score
+                    mean_score = sample_rule_scores.mean() if len(sample_rule_scores) > 0 else 0.0
+                    rule_scores.loc[sample_indices] = sample_rule_scores
+                    rule_scores.loc[~rule_scores.index.isin(sample_indices)] = mean_score
+                else:
+                    rule_scores = sample_rule_scores
             except Exception as e:
                 print(f"Warning: Association rule scoring failed: {e}")
+                # Fall back to simple frequency-based scoring for edge cases
+                rule_scores = self._compute_fallback_scores(df)
         
         # Compute summary scores if enabled  
         if method in ['summaries', 'hybrid'] and self.config.get('summaries', {}).get('enabled', True):
             try:
-                summary_scores = self._compute_summary_scores(df, frequent_itemsets)
+                sample_summary_scores = self._compute_summary_scores(sample_df, frequent_itemsets)
+                if use_sampling:
+                    # For non-sampled tuples, use mean score
+                    mean_score = sample_summary_scores.mean() if len(sample_summary_scores) > 0 else 0.0
+                    summary_scores.loc[sample_indices] = sample_summary_scores
+                    summary_scores.loc[~summary_scores.index.isin(sample_indices)] = mean_score
+                else:
+                    summary_scores = sample_summary_scores
             except Exception as e:
                 print(f"Warning: Summary scoring failed: {e}")
+                # Fall back to simple frequency-based scoring for edge cases
+                summary_scores = self._compute_fallback_scores(df)
         
         # Combine scores based on method
         if method == 'association_rules':
@@ -201,6 +242,37 @@ class TupleRecommender:
             return summary_scores
         else:  # hybrid
             return alpha * rule_scores + beta * summary_scores
+            
+    def _compute_fallback_scores(self, df: pd.DataFrame) -> pd.Series:
+        """
+        Compute simple fallback scores for edge cases where pattern mining fails.
+        
+        This assigns scores based on value frequency - rarer values get higher scores.
+        
+        Args:
+            df: Preprocessed DataFrame
+            
+        Returns:
+            Series with fallback scores
+        """
+        scores = pd.Series([0.0] * len(df), index=df.index)
+        
+        # For each column, assign higher scores to rarer values
+        for col in df.columns:
+            value_counts = df[col].value_counts()
+            total_rows = len(df)
+            
+            # Compute rarity score (inverse frequency)
+            for idx, value in df[col].items():
+                frequency = value_counts[value]
+                rarity_score = 1.0 / frequency if frequency > 0 else 1.0
+                scores[idx] += rarity_score
+        
+        # Normalize scores
+        if scores.max() > 0:
+            scores = scores / scores.max()
+            
+        return scores
     
     def _compute_association_rule_scores(self, df: pd.DataFrame, frequent_itemsets: pd.DataFrame) -> pd.Series:
         """
@@ -226,16 +298,34 @@ class TupleRecommender:
         if rules_df.empty:
             return pd.Series([0.0] * len(df), index=df.index)
         
+        # Performance optimization: limit number of rules for large datasets
+        max_rules = 1000  # Limit to top 1000 rules
+        if len(rules_df) > max_rules:
+            # Sort by the primary metric and take top rules
+            metric_col = assoc_config.get('metric', 'confidence')
+            if metric_col in rules_df.columns:
+                rules_df = rules_df.nlargest(max_rules, metric_col)
+            else:
+                rules_df = rules_df.head(max_rules)
+            print(f"Limited rules to top {max_rules} for performance (from {len(rules_df)} total)")
+        
         # Get measure columns for scoring
-        interestingness_config = self.config.get('interestingness', {})
         measure_columns = ['confidence', 'lift', 'leverage']  # Default measures
         
-        # Evaluate tuples using association rules
+        # Convert DataFrame to the encoded format expected by the evaluator
+        encoded_df, attributes = self._prepare_data_for_fpgrowth(df)
+        
+        if encoded_df.empty:
+            return pd.Series([0.0] * len(df), index=df.index)
+        
+        # Evaluate tuples using association rules with encoded data
+        # Use parallel processing for large datasets
+        use_parallel = len(encoded_df) > 500 and len(rules_df) > 100
         scores = self.association_evaluator.evaulate_df(
-            df, 
+            encoded_df, 
             rules_df, 
             measure_columns=measure_columns,
-            parallel=len(df) > 1000
+            parallel=use_parallel
         )
         
         return scores
@@ -257,10 +347,13 @@ class TupleRecommender:
         
         self.summary_evaluator = SummaryEvaluator(frequent_itemsets, desired_size)
         
+        # Prepare data with column names prepended for summary generation
+        df_with_names = self.prepend_column_names(df.copy())
+        
         # Generate summaries
         weights = summary_config.get('weights')
         summaries = self.summary_evaluator.summarise_df(
-            df,
+            df_with_names,
             desired_size=desired_size,
             weights=weights
         )
@@ -268,8 +361,8 @@ class TupleRecommender:
         if not summaries:
             return pd.Series([0.0] * len(df), index=df.index)
         
-        # Evaluate tuples using summaries
-        scores = self.summary_evaluator.evaulate_df(df, summaries)
+        # Evaluate tuples using summaries with the correctly formatted data
+        scores = self.summary_evaluator.evaulate_df(df_with_names, summaries)
         
         return scores
     
@@ -278,9 +371,10 @@ class TupleRecommender:
         Convert a DataFrame to a format suitable for fpgrowth algorithm using TransactionEncoder.
         
         This method prepares the data for frequent pattern mining by:
-        1. Prepending column names to values to create meaningful itemsets
-        2. Converting to transaction format 
-        3. One-hot encoding using TransactionEncoder for efficient fpgrowth processing
+        1. Limiting unique values per column to prevent explosion
+        2. Prepending column names to values to create meaningful itemsets
+        3. Converting to transaction format 
+        4. One-hot encoding using TransactionEncoder for efficient fpgrowth processing
         
         Args:
             df: Input DataFrame
@@ -291,8 +385,23 @@ class TupleRecommender:
         if df.empty:
             return pd.DataFrame(), []
         
+        # Limit unique values per column to prevent combinatorial explosion
+        df_limited = df.copy()
+        max_unique_values = 20  # Limit to prevent too many items
+        
+        for col in df_limited.columns:
+            unique_values = df_limited[col].nunique()
+            if unique_values > max_unique_values:
+                # Keep only the most frequent values, replace others with 'OTHER'
+                value_counts = df_limited[col].value_counts()
+                top_values = value_counts.head(max_unique_values - 1).index
+                df_limited[col] = df_limited[col].apply(
+                    lambda x: x if x in top_values else 'OTHER'
+                )
+                print(f"Column {col}: limited from {unique_values} to {df_limited[col].nunique()} unique values")
+        
         # Prepend column names to create meaningful item identifiers
-        df_with_names = self.prepend_column_names(df.copy())
+        df_with_names = self.prepend_column_names(df_limited)
         
         # Convert DataFrame to transactions
         transactions = df_with_names.to_dict(orient="records")
@@ -305,6 +414,8 @@ class TupleRecommender:
         
         # Create encoded DataFrame
         encoded_df = pd.DataFrame(te_ary, columns=te.columns_)
+        
+        print(f"Encoded DataFrame: {len(encoded_df)} rows, {len(encoded_df.columns)} columns")
         
         return encoded_df, attributes
 
