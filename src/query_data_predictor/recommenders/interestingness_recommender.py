@@ -6,7 +6,7 @@ import pandas as pd
 from typing import Dict, Any, Optional
 
 from .base_recommender import BaseRecommender
-from ..tuple_recommender import TupleRecommender
+from .tuple_recommender import TupleRecommender
 
 
 class InterestingnessRecommender(BaseRecommender):
