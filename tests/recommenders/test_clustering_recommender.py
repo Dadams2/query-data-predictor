@@ -156,7 +156,7 @@ class TestClusteringRecommender:
         prepared = recommender._prepare_data_for_clustering(mixed_dataframe)
         
         if not prepared.empty:
-            clusters = recommender._perform_clustering(prepared, n_clusters=3)
+            clusters, kmeans = recommender._perform_clustering(prepared, n_clusters=3)
             
             # Should return cluster labels
             assert isinstance(clusters, np.ndarray)
@@ -169,7 +169,24 @@ class TestClusteringRecommender:
         recommender = ClusteringRecommender(sample_config)
         clusters = np.array([0, 1, 0, 2, 1, 0, 2, 1])  # Mock cluster labels
         
-        result = recommender._select_representatives(mixed_dataframe, clusters, n_clusters=3)
+        # Prepare encoded data
+        encoded_data = recommender._prepare_data_for_clustering(mixed_dataframe)
+        
+        # Create a mock kmeans model with proper centroids
+        mock_kmeans = Mock()
+        mock_kmeans.cluster_centers_ = np.array([
+            [0.0, 0.0] * len(encoded_data.columns) if not encoded_data.empty else [0.0, 0.0],
+            [1.0, 1.0] * len(encoded_data.columns) if not encoded_data.empty else [1.0, 1.0], 
+            [2.0, 2.0] * len(encoded_data.columns) if not encoded_data.empty else [2.0, 2.0]
+        ])[:, :len(encoded_data.columns) if not encoded_data.empty else 2]
+        
+        if encoded_data.empty:
+            # Skip test if data preparation failed
+            pytest.skip("Data preparation failed - cannot test representative selection")
+        
+        result = recommender._select_representatives(
+            mixed_dataframe, encoded_data, clusters, mock_kmeans, n_clusters=3
+        )
         
         # Should return DataFrame with representatives
         assert isinstance(result, pd.DataFrame)

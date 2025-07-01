@@ -108,7 +108,7 @@ class TestDatasetCreator:
     def test_build_dataset(self, dataset_creator, tmp_path, monkeypatch):
         """Test dataset building with mock data."""
         # Set temporary output directory
-        dataset_creator.output_dir = str(tmp_path)
+        dataset_creator.output_dir = Path(tmp_path)
         
         # Mock get_sessions to return a single session
         monkeypatch.setattr(dataset_creator.data_loader, "get_sessions", lambda: [1])
