@@ -14,3 +14,5 @@ wheels/
 data/
 *.ipynb
 *.log
+*.pkl
+*.html
