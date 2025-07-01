@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional, List
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.exceptions import ConvergenceWarning
+from sklearn.metrics import pairwise_distances_argmin_min
 import warnings
 
 from .base_recommender import BaseRecommender
@@ -72,10 +73,12 @@ class ClusteringRecommender(BaseRecommender):
                 return self._fallback_selection(current_results, n_clusters)
             
             # Perform clustering
-            clusters = self._perform_clustering(encoded_data, n_clusters)
+            clusters, kmeans_model = self._perform_clustering(encoded_data, n_clusters)
             
             # Select representative tuples from each cluster
-            recommendations = self._select_representatives(current_results, clusters, n_clusters)
+            recommendations = self._select_representatives(
+                current_results, encoded_data, clusters, kmeans_model, n_clusters
+            )
             
             # Apply final output limiting
             return self._limit_output(recommendations)
@@ -141,7 +144,7 @@ class ClusteringRecommender(BaseRecommender):
         
         return pd.DataFrame()
     
-    def _perform_clustering(self, data: pd.DataFrame, n_clusters: int) -> np.ndarray:
+    def _perform_clustering(self, data: pd.DataFrame, n_clusters: int) -> tuple[np.ndarray, KMeans]:
         """
         Perform K-means clustering on the prepared data.
         
@@ -150,7 +153,7 @@ class ClusteringRecommender(BaseRecommender):
             n_clusters: Number of clusters
             
         Returns:
-            Array of cluster labels
+            Tuple of (cluster labels array, fitted KMeans model)
         """
         clustering_config = self.config.get('clustering', {})
         
@@ -165,19 +168,23 @@ class ClusteringRecommender(BaseRecommender):
                 n_init=clustering_config.get('n_init', 10)
             )
             
-            return kmeans.fit_predict(data)
+            clusters = kmeans.fit_predict(data)
+            return clusters, kmeans
     
-    def _select_representatives(self, original_df: pd.DataFrame, clusters: np.ndarray, n_clusters: int) -> pd.DataFrame:
+    def _select_representatives(self, original_df: pd.DataFrame, encoded_data: pd.DataFrame, 
+                               clusters: np.ndarray, kmeans_model: KMeans, n_clusters: int) -> pd.DataFrame:
         """
-        Select representative tuples from each cluster.
+        Select representative tuples from each cluster by finding the tuple closest to the centroid.
         
         Args:
             original_df: Original DataFrame
+            encoded_data: The encoded data used for clustering
             clusters: Array of cluster labels
+            kmeans_model: Fitted KMeans model with centroids
             n_clusters: Number of clusters
             
         Returns:
-            DataFrame with representative tuples
+            DataFrame with representative tuples (closest to centroids)
         """
         representatives = []
         
@@ -186,9 +193,20 @@ class ClusteringRecommender(BaseRecommender):
             cluster_indices = np.where(clusters == cluster_id)[0]
             
             if len(cluster_indices) > 0:
-                # For simplicity, select the first tuple in each cluster
-                # Could be enhanced to select the tuple closest to centroid
-                representative_idx = cluster_indices[0]
+                if len(cluster_indices) == 1:
+                    # Only one tuple in cluster, select it
+                    representative_idx = cluster_indices[0]
+                else:
+                    # Find the tuple closest to the cluster centroid
+                    cluster_data = encoded_data.iloc[cluster_indices].values
+                    centroid = kmeans_model.cluster_centers_[cluster_id].reshape(1, -1)
+                    
+                    # Find the closest point to the centroid
+                    closest_idx_within_cluster, _ = pairwise_distances_argmin_min(
+                        centroid, cluster_data, metric='euclidean'
+                    )
+                    representative_idx = cluster_indices[closest_idx_within_cluster[0]]
+                
                 representatives.append(original_df.iloc[representative_idx])
         
         if representatives:
