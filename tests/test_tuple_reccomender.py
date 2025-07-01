@@ -235,3 +235,58 @@ class TestTupleRecommender:
         
         # Should respect the top_k parameter
         assert len(recommendations) <= 2
+    
+    def test_two_tuple_edge_case(self):
+        """Test edge case with only 2 tuples that previously caused infinite loops."""
+        config = {
+            "discretization": {"enabled": False},
+            "association_rules": {"enabled": True, "min_support": 0.5, "min_threshold": 0.5},
+            "summaries": {"enabled": True, "desired_size": 5},  # Higher than number of tuples
+            "recommendation": {"method": "hybrid", "top_k": 5}
+        }
+        
+        # Test with identical tuples
+        identical_data = pd.DataFrame({
+            'col1': ['A', 'A'],
+            'col2': ['X', 'X'],
+            'col3': [1, 1]
+        })
+        
+        recommender = TupleRecommender(config)
+        result = recommender.recommend_tuples(identical_data, top_k=2)
+        
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) <= 2
+        
+        # Test with partially similar tuples
+        similar_data = pd.DataFrame({
+            'col1': ['A', 'B'],
+            'col2': ['X', 'X'],
+            'col3': [1, 1]
+        })
+        
+        result2 = recommender.recommend_tuples(similar_data, top_k=2)
+        
+        assert isinstance(result2, pd.DataFrame)
+        assert len(result2) <= 2
+    
+    def test_fallback_scoring(self, enhanced_config):
+        """Test that fallback scoring works when pattern mining fails."""
+        # Create data that will likely cause pattern mining to fail
+        small_data = pd.DataFrame({
+            'A': [1, 2],
+            'B': [3.0, 4.0],  # Float column for discretization
+            'C': ['x', 'y']
+        })
+        
+        recommender = TupleRecommender(enhanced_config)
+        
+        # Force the use of fallback scoring by causing failures
+        recommender.config['association_rules']['min_support'] = 0.99  # Too high
+        recommender.config['summaries']['desired_size'] = 0  # Invalid
+        
+        result = recommender.recommend_tuples(small_data, top_k=2)
+        
+        # Should still return results using fallback scoring
+        assert isinstance(result, pd.DataFrame)
+        assert len(result) <= 2
