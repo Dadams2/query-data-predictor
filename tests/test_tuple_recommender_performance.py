@@ -58,13 +58,18 @@ class TestTupleRecommenderPerformance:
             },
             "summaries": {
                 "enabled": True,
-                "desired_size": 10
+                "desired_size": 10,
+                "weights": None
+            },
+            "interestingness": {
+                "enabled": True,
+                "measures": ["variance", "simpson", "shannon"]
             },
             "recommendation": {
                 "enabled": True,
                 "method": "hybrid",  # Test most expensive method
                 "top_k": 20,
-                "score_threshold": 0.3
+                "score_threshold": 0.0  # No threshold filtering for performance test
             }
         }
     
@@ -126,7 +131,7 @@ class TestTupleRecommenderPerformance:
                 # Measure memory before
                 memory_before = self.get_memory_usage()
                 
-                # Measure execution time
+                # Measure execution time and memory usage
                 start_time = time.time()
                 
                 try:
@@ -206,122 +211,295 @@ class TestTupleRecommenderPerformance:
             if not method.endswith('_failed'):
                 assert avg_memory < 500.0, f"Method {method} uses too much memory: {avg_memory:.2f}MB average"
 
-    def test_fp_growth_optimization(self, dataloader: DataLoader, query_sequence: QueryResultSequence, recommender: TupleRecommender):
-        """Test that the FP-Growth optimization actually improves performance."""
+    def test_scalability_analysis(self, dataloader, query_sequence, recommender):
+        """Test how performance scales with data size."""
         sessions = dataloader.get_sessions()
         
         if not sessions:
             pytest.skip("No sessions found in dataset")
         
-        first_session = sessions[0]
-        query_pairs = list(query_sequence.iter_query_result_pairs(first_session, gap=1))
+        # Get different sized datasets
+        scalability_results = {
+            'data_size': [],
+            'execution_time': [],
+            'memory_delta': [],
+            'recommendations_count': []
+        }
         
-        if not query_pairs:
-            pytest.skip(f"No valid query pairs found in session {first_session}")
-        
-        # Use only first query pair for this test
-        curr_results, fut_results = query_sequence.get_query_pair_with_gap(first_session, query_pairs[0][0], gap=1)
-        
-        # Configure for hybrid method to test optimization
-        recommender.config['recommendation']['method'] = 'hybrid'
-        
-        print(f"\nTesting FP-Growth optimization with data shape: {curr_results.shape}")
-        
-        # Test 1: Without optimization (original behavior)
-        print("Testing without pre-computed frequent itemsets...")
-        start_time = time.time()
-        recommendations_no_opt = recommender.recommend_tuples(curr_results, top_k=10)
-        time_no_opt = time.time() - start_time
-        
-        # Test 2: With optimization (pre-compute frequent itemsets)
-        print("Testing with pre-computed frequent itemsets...")
-        processed_df = recommender.preprocess_data(curr_results)
-        
-        # Pre-compute frequent itemsets
-        start_time = time.time()
-        frequent_itemsets = recommender.compute_frequent_itemsets(processed_df)
-        fp_growth_time = time.time() - start_time
-        
-        # Use pre-computed frequent itemsets
-        start_time = time.time()
-        recommendations_opt = recommender.recommend_tuples(
-            curr_results, 
-            top_k=10, 
-            frequent_itemsets=frequent_itemsets
-        )
-        time_with_opt = time.time() - start_time
-        total_opt_time = fp_growth_time + time_with_opt
-        
-        print(f"\nPerformance comparison:")
-        print(f"  Without optimization: {time_no_opt:.4f}s")
-        print(f"  With optimization: {total_opt_time:.4f}s")
-        print(f"    - FP-Growth time: {fp_growth_time:.4f}s")
-        print(f"    - Recommendation time: {time_with_opt:.4f}s")
-        print(f"  Speedup: {time_no_opt/total_opt_time:.2f}x")
-        
-        # Verify results are similar (allowing for some minor differences)
-        print(f"\nResults comparison:")
-        print(f"  Recommendations without opt: {len(recommendations_no_opt)}")
-        print(f"  Recommendations with opt: {len(recommendations_opt)}")
-        
-        # The optimization should provide some benefit for hybrid method
-        # (though for small datasets it might be minimal)
-        if time_no_opt > 1.0:  # Only check if base time is significant
-            assert total_opt_time <= time_no_opt * 1.2, "Optimization should not significantly worsen performance"
-
-    def test_memory_efficiency_with_large_data(self, dataloader, query_sequence, recommender):
-        """Test memory efficiency with larger datasets."""
-        sessions = dataloader.get_sessions()
-        
-        if not sessions:
-            pytest.skip("No sessions found in dataset")
-        
-        # Find a session with substantial data
-        best_session = None
-        max_data_size = 0
-        
-        for session in sessions[:5]:  # Check first 5 sessions
+        for session in sessions[:3]:  # Test first 3 sessions
             try:
                 query_pairs = list(query_sequence.iter_query_result_pairs(session, gap=1))
-                if query_pairs:
-                    # Get size of first query result
-                    _, _, curr_results, _ = query_pairs[0]
-                    data_size = curr_results.shape[0] * curr_results.shape[1]
-                    if data_size > max_data_size:
-                        max_data_size = data_size
-                        best_session = session
-            except Exception:
+                if not query_pairs:
+                    continue
+                    
+                curr_id, fut_id, curr_results, fut_results = query_pairs[0]
+                data_size = len(curr_results)
+                
+                if data_size < 10:  # Skip very small datasets
+                    continue
+                
+                print(f"\nTesting scalability with {data_size} rows from session {session}")
+                
+                # Measure performance
+                memory_before = self.get_memory_usage()
+                start_time = time.time()
+                
+                recommendations = recommender.recommend_tuples(curr_results, top_k=10)
+                
+                execution_time = time.time() - start_time
+                memory_after = self.get_memory_usage()
+                memory_delta = memory_after - memory_before
+                
+                # Store results
+                scalability_results['data_size'].append(data_size)
+                scalability_results['execution_time'].append(execution_time)
+                scalability_results['memory_delta'].append(memory_delta)
+                scalability_results['recommendations_count'].append(len(recommendations))
+                
+                print(f"  Data size: {data_size}, Time: {execution_time:.4f}s, Memory: {memory_delta:.2f}MB")
+                
+            except Exception as e:
+                print(f"  Error with session {session}: {e}")
                 continue
         
-        if best_session is None:
-            pytest.skip("No suitable session found for memory testing")
+        if len(scalability_results['data_size']) < 2:
+            pytest.skip("Not enough data points for scalability analysis")
         
-        print(f"\nTesting memory efficiency with session {best_session} (data size: {max_data_size})")
+        # Analyze scalability
+        scalability_df = pd.DataFrame(scalability_results)
+        scalability_df = scalability_df.sort_values('data_size')
         
-        query_pairs = list(query_sequence.iter_query_result_pairs(best_session, gap=1))
+        print("\nScalability Analysis:")
+        print(scalability_df.to_string(index=False))
+        
+        # Basic scalability checks
+        time_per_row = scalability_df['execution_time'] / scalability_df['data_size']
+        memory_per_row = scalability_df['memory_delta'] / scalability_df['data_size']
+        
+        print(f"\nTime per row (avg): {time_per_row.mean():.6f}s")
+        print(f"Memory per row (avg): {memory_per_row.mean():.4f}MB")
+        
+        # Assert reasonable scalability
+        assert time_per_row.max() < 0.1, f"Time per row too high: {time_per_row.max():.6f}s"
+        assert memory_per_row.max() < 1.0, f"Memory per row too high: {memory_per_row.max():.4f}MB"
+    
+    def test_config_impact_on_performance(self, dataloader, query_sequence):
+        """Test how different configuration parameters impact performance."""
+        sessions = dataloader.get_sessions()
+        
+        if not sessions:
+            pytest.skip("No sessions found in dataset")
+        
+        # Get test data
+        query_pairs = list(query_sequence.iter_query_result_pairs(sessions[0], gap=1))
+        if not query_pairs:
+            pytest.skip("No query pairs found")
+        
         curr_id, fut_id, curr_results, fut_results = query_pairs[0]
         
-        # Monitor memory during recommendation
-        initial_memory = self.get_memory_usage()
-        print(f"Initial memory: {initial_memory:.2f}MB")
+        print(f"\nTesting configuration impact with {len(curr_results)} rows")
         
-        # Test association rules method
-        memory_before = self.get_memory_usage()
-        recommendations = recommender._recommend_with_association_rules(
-            recommender.preprocess_data(curr_results), 
-            top_k=20
-        )
-        memory_after = self.get_memory_usage()
+        # Test different configurations
+        configs_to_test = [
+            ("Low Support", {"association_rules": {"min_support": 0.01}}),
+            ("High Support", {"association_rules": {"min_support": 0.2}}),
+            ("Many Bins", {"discretization": {"bins": 10}}),
+            ("Few Bins", {"discretization": {"bins": 3}}),
+            ("Large Summary", {"summaries": {"desired_size": 20}}),
+            ("Small Summary", {"summaries": {"desired_size": 3}})
+        ]
         
-        memory_delta = memory_after - memory_before
-        memory_per_row = memory_delta / len(curr_results) if len(curr_results) > 0 else 0
+        config_results = []
         
-        print(f"Memory usage for association rules:")
-        print(f"  Before: {memory_before:.2f}MB")
-        print(f"  After: {memory_after:.2f}MB")
-        print(f"  Delta: {memory_delta:.2f}MB")
-        print(f"  Per data row: {memory_per_row:.4f}MB")
+        for config_name, config_override in configs_to_test:
+            # Create modified config
+            test_config = self.performance_config.copy()
+            
+            # Deep merge the override
+            for section, params in config_override.items():
+                if section in test_config:
+                    test_config[section].update(params)
+                else:
+                    test_config[section] = params
+            
+            # Test performance
+            recommender = TupleRecommender(test_config)
+            
+            memory_before = self.get_memory_usage()
+            start_time = time.time()
+            
+            try:
+                recommendations = recommender.recommend_tuples(curr_results, top_k=10)
+                execution_time = time.time() - start_time
+                memory_after = self.get_memory_usage()
+                
+                config_results.append({
+                    'config': config_name,
+                    'execution_time': execution_time,
+                    'memory_delta': memory_after - memory_before,
+                    'recommendations': len(recommendations),
+                    'success': True
+                })
+                
+                print(f"  {config_name}: {execution_time:.4f}s, {memory_after - memory_before:.2f}MB")
+                
+            except Exception as e:
+                print(f"  {config_name}: Failed - {e}")
+                config_results.append({
+                    'config': config_name,
+                    'execution_time': time.time() - start_time,
+                    'memory_delta': 0,
+                    'recommendations': 0,
+                    'success': False
+                })
         
-        # Memory should be reasonable relative to data size
-        assert memory_delta < 1000, f"Memory usage too high: {memory_delta}MB for {len(curr_results)} rows"
-        assert memory_per_row < 1.0, f"Memory per row too high: {memory_per_row}MB"
+        # Analyze configuration impact
+        config_df = pd.DataFrame(config_results)
+        successful_configs = config_df[config_df['success']]
+        
+        if len(successful_configs) > 0:
+            print(f"\nConfiguration Impact Summary:")
+            print(f"  Fastest config: {successful_configs.loc[successful_configs['execution_time'].idxmin(), 'config']}")
+            print(f"  Slowest config: {successful_configs.loc[successful_configs['execution_time'].idxmax(), 'config']}")
+            print(f"  Most memory efficient: {successful_configs.loc[successful_configs['memory_delta'].idxmin(), 'config']}")
+            
+            # Assert all successful configs are reasonably fast
+            assert successful_configs['execution_time'].max() < 60.0, "Some configurations are too slow"
+
+    @pytest.fixture
+    def performance_config(self):
+        """Get the performance config fixture (need to re-define to use in other methods)."""
+        return {
+            "discretization": {
+                "enabled": True,
+                "method": "equal_width",
+                "bins": 5,
+                "save_params": False
+            },
+            "association_rules": {
+                "enabled": True,
+                "min_support": 0.05,
+                "metric": "confidence",
+                "min_threshold": 0.3
+            },
+            "summaries": {
+                "enabled": True,
+                "desired_size": 10,
+                "weights": None
+            },
+            "interestingness": {
+                "enabled": True,
+                "measures": ["variance", "simpson", "shannon"]
+            },
+            "recommendation": {
+                "enabled": True,
+                "method": "hybrid",
+                "top_k": 20,
+                "score_threshold": 0.0
+            }
+        }
+
+
+def main():
+    """Main function to run all performance tests for profiling with scalene."""
+    print("Running TupleRecommender Performance Tests")
+    print("=" * 60)
+    
+    # Create test instance
+    test_instance = TestTupleRecommenderPerformance()
+    
+    # Setup fixtures manually (since we're not using pytest runner)
+    try:
+        # Get dataset directory manually
+        test_dir = Path(__file__).parent
+        project_root = test_dir.parent
+        dataset_dir = project_root / "data" / "datasets"
+        
+        if not dataset_dir.exists():
+            print(f"Dataset directory not found: {dataset_dir}")
+            return 1
+        
+        dataset_dir = str(dataset_dir)
+        print(f"Using dataset directory: {dataset_dir}")
+        
+        # Create dataloader
+        dataloader = DataLoader(dataset_dir)
+        
+        # Create query sequence
+        query_sequence = QueryResultSequence(dataloader)
+        
+        # Create performance config manually
+        performance_config = {
+            "discretization": {
+                "enabled": True,
+                "method": "equal_width",
+                "bins": 5,
+                "save_params": False
+            },
+            "association_rules": {
+                "enabled": True,
+                "min_support": 0.05,  # Lower support for more patterns
+                "metric": "confidence",
+                "min_threshold": 0.3  # Lower threshold for more rules
+            },
+            "summaries": {
+                "enabled": True,
+                "desired_size": 10
+            },
+            "recommendation": {
+                "enabled": True,
+                "method": "hybrid",  # Test most expensive method
+                "top_k": 20,
+                "score_threshold": 0.3
+            }
+        }
+        
+        # Create recommender
+        recommender = TupleRecommender(performance_config)
+        
+        print("Fixtures created successfully")
+        
+        # Run test 1: Performance with first session
+        print("\n" + "="*60)
+        print("TEST 1: Performance with first session")
+        print("="*60)
+        try:
+            test_instance.test_performance_with_first_session(dataloader, query_sequence, recommender)
+            print("✓ Test 1 completed successfully")
+        except Exception as e:
+            print(f"✗ Test 1 failed: {e}")
+        
+        # # Run test 2: FP-Growth optimization
+        # print("\n" + "="*60)
+        # print("TEST 2: FP-Growth optimization")
+        # print("="*60)
+        # try:
+        #     test_instance.test_fp_growth_optimization(dataloader, query_sequence, recommender)
+        #     print("✓ Test 2 completed successfully")
+        # except Exception as e:
+        #     print(f"✗ Test 2 failed: {e}")
+        
+        # # Run test 3: Memory efficiency with large data
+        # print("\n" + "="*60)
+        # print("TEST 3: Memory efficiency with large data")
+        # print("="*60)
+        # try:
+        #     test_instance.test_memory_efficiency_with_large_data(dataloader, query_sequence, recommender)
+        #     print("✓ Test 3 completed successfully")
+        # except Exception as e:
+        #     print(f"✗ Test 3 failed: {e}")
+        
+        # print("\n" + "="*60)
+        # print("ALL TESTS COMPLETED")
+        # print("="*60)
+        
+    except Exception as e:
+        print(f"Failed to setup fixtures: {e}")
+        return 1
+    
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())

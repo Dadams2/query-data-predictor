@@ -60,7 +60,8 @@ def sample_config():
         "discretization": {
             "enabled": True,
             "method": "equal_width",
-            "bins": 3
+            "bins": 3,
+            "save_params": False
         },
         "association_rules": {
             "enabled": True,
@@ -68,9 +69,19 @@ def sample_config():
             "metric": "confidence",
             "min_threshold": 0.5
         },
+        "summaries": {
+            "enabled": True,
+            "desired_size": 3,
+            "weights": None
+        },
+        "interestingness": {
+            "enabled": True,
+            "measures": ["variance", "simpson", "shannon"]
+        },
         "recommendation": {
             "enabled": True,
             "method": "association_rules",
-            "top_k": 5
+            "top_k": 5,
+            "score_threshold": 0.0
         }
     }
