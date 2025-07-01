@@ -13,10 +13,10 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Union
 
 from query_data_predictor.dataloader import DataLoader
-from query_data_predictor.result_loader import ResultLoader
+from query_data_predictor.query_result_sequence import QueryResultSequence
 from query_data_predictor.config_manager import ConfigManager
 from query_data_predictor.metrics import EvaluationMetrics
-from query_data_predictor.tuple_recommender import TupleRecommender
+from query_data_predictor.recommenders.tuple_recommender import TupleRecommender
 
 
 class ExperimentRunner:
@@ -43,7 +43,7 @@ class ExperimentRunner:
         # Initialize data loaders
         self.logger.info(f"Initializing data loaders with path: {data_path}")
         self.data_loader = DataLoader(data_path)
-        self.result_loader = ResultLoader(self.data_loader)
+        self.query_result_sequence = QueryResultSequence(self.data_loader)
         
         # Initialize metrics
         eval_config = self.config.get('evaluation', {})
@@ -87,7 +87,7 @@ class ExperimentRunner:
         
         try:
             # Get all pairs of queries with the specified gap
-            query_pairs = self.result_loader.get_query_pairs_with_gap(session_id, gap)
+            query_pairs = list(self.query_result_sequence.iter_query_result_pairs(session_id, gap))
             
             if not query_pairs:
                 self.logger.warning(f"No valid query pairs found for session {session_id} with gap {gap}")
