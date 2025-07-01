@@ -175,17 +175,37 @@ def bus_summarization_with_candidates(transactions: List[Dict[str, Any]],
     """
     attributes = list(weights.keys())
     summaries = [t.copy() for t in transactions]  # Start with each transaction
+    
+    # Safety measures to prevent infinite loops
+    max_iterations = len(transactions) * 2  # Reasonable upper bound
+    iteration_count = 0
+    previous_summary_count = len(summaries)
+    stagnation_counter = 0
+    max_stagnation = 3  # Allow 3 iterations without progress
 
-    while len(summaries) > desired_size:
+    while len(summaries) > desired_size and iteration_count < max_iterations:
         candidate = select_best(candidate_summaries, summaries, weights)
         if candidate is None:
             break
         covered = [s for s in summaries if covers(candidate, s, attributes)]
         if len(covered) <= 1:
             break
+        
         # Remove covered summaries and add candidate summary.
         summaries = [s for s in summaries if s not in covered]
         summaries.append(candidate)
+        
+        # Check for stagnation (no progress in reducing summaries)
+        if len(summaries) >= previous_summary_count:
+            stagnation_counter += 1
+            if stagnation_counter >= max_stagnation:
+                break
+        else:
+            stagnation_counter = 0
+            
+        previous_summary_count = len(summaries)
+        iteration_count += 1
+        
     return summaries
 
 # =============================================================================
