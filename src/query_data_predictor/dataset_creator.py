@@ -1,13 +1,14 @@
-import os
 import pandas as pd
 import base64
 from typing import List, Dict, Optional, Any
 import sqlparse
 import pickle
+from pathlib import Path
 
 from query_data_predictor.query_runner import QueryRunner
 from query_data_predictor.importer import DataImporter
 from query_data_predictor.sdss_json_importer import JsonDataImporter
+from query_data_predictor.feature_extractor import FeatureExtractor
 
 class DatasetCreator:
     """
@@ -41,13 +42,16 @@ class DatasetCreator:
         else:
             raise ValueError("Either data_loader or json_path must be provided")
         
-        self.output_dir = output_dir
+        self.output_dir = Path(output_dir)
         self.dataset_prefix = dataset_prefix
-        self.results_dir = results_dir  # Store the results directory path
+        self.results_dir = Path(results_dir)  # Store the results directory path
         
         # Create output directories if they don't exist
-        os.makedirs(output_dir, exist_ok=True)
-        os.makedirs(results_dir, exist_ok=True)  # Create results directory
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.results_dir.mkdir(parents=True, exist_ok=True)  # Create results directory
+        
+        # Initialize feature extractor
+        self.feature_extractor = FeatureExtractor()
         
         if query_runner is None:
             # Initialize QueryRunner with default parameters
@@ -58,7 +62,7 @@ class DatasetCreator:
     
     def _extract_query_features(self, query: str) -> Dict[str, Any]:
         """
-        Extract features from a SQL query.
+        Extract features from a SQL query using the FeatureExtractor.
         
         Args:
             query: SQL query string
@@ -66,33 +70,11 @@ class DatasetCreator:
         Returns:
             Dictionary of features
         """
-        # Parse the query
-        parsed = sqlparse.parse(query)[0]
-        
-        # Get query type (SELECT, INSERT, etc.)
-        query_type = parsed.get_type()
-        
-        # Basic features
-        features = {
-            'query_type': query_type,
-            'query_length': len(query),
-            'token_count': len(parsed.tokens),
-        }
-        
-        if query_type == 'SELECT':
-            features['has_join'] = 'JOIN' in query.upper()
-            features['has_where'] = 'WHERE' in query.upper()
-            features['has_group_by'] = 'GROUP BY' in query.upper()
-            features['has_order_by'] = 'ORDER BY' in query.upper()
-            agg_funcs = ['COUNT', 'SUM', 'AVG', 'MIN', 'MAX']
-            for func in agg_funcs:
-                features[f'has_{func.lower()}'] = func in query.upper()
-        
-        return features
+        return self.feature_extractor.extract_query_features(query)
     
     def _extract_result_features(self, columns: List[str], results: pd.DataFrame) -> Dict[str, Any]:
         """
-        Extract features from query results.
+        Extract features from query results using the FeatureExtractor.
         
         Args:
             columns: List of column names
@@ -101,56 +83,7 @@ class DatasetCreator:
         Returns:
             Dictionary of features
         """
-        # Validate inputs
-        if results is None or not isinstance(results, pd.DataFrame):
-            raise ValueError("Invalid results: Expected a Pandas DataFrame.")
-        if columns is None or not isinstance(columns, list):
-            raise ValueError("Invalid columns: Expected a list of column names.")
-        
-        features = {
-            'result_column_count': len(columns),
-            'result_row_count': len(results) if not results.empty else 0,
-        }
-        
-        # If we have results, add more features
-        if not results.empty:
-            # Get column types
-            for i, col in enumerate(columns):
-                if col in results.columns:
-                    col_data = results[col]
-                    if isinstance(col_data, pd.DataFrame):
-                        for j in range(col_data.shape[1]):
-                            series = col_data.iloc[:, j]
-                            col_type = series.dtype
-                            features[f'col_{i}_{j}_type'] = str(col_type)
-                    else:
-                        col_type = col_data.dtype
-                        features[f'col_{i}_type'] = str(col_type)
-            
-            # Basic statistics for numeric columns
-            for i, col in enumerate(columns):
-                try:
-                    if col in results.columns:
-                        col_data = results[col]
-                        if isinstance(col_data, pd.DataFrame):
-                            for j in range(col_data.shape[1]):
-                                series = col_data.iloc[:, j]
-                                if pd.api.types.is_numeric_dtype(series):
-                                    features[f'col_{i}_{j}_min'] = series.min()
-                                    features[f'col_{i}_{j}_max'] = series.max()
-                                    features[f'col_{i}_{j}_mean'] = series.mean()
-                                    features[f'col_{i}_{j}_std'] = series.std()
-                        elif pd.api.types.is_numeric_dtype(col_data):
-                            features[f'col_{i}_min'] = col_data.min()
-                            features[f'col_{i}_max'] = col_data.max()
-                            features[f'col_{i}_mean'] = col_data.mean()
-                            features[f'col_{i}_std'] = col_data.std()
-                except Exception as e:
-                    # Log the specific error but continue processing
-                    print(f"Error processing statistics for column {col}: {e}")
-                    pass
-        
-        return features
+        return self.feature_extractor.extract_result_features(columns, results)
     
     def _get_result_signature(self, columns: List[str], results: pd.DataFrame) -> str:
         """
@@ -213,8 +146,17 @@ class DatasetCreator:
                     # Skip if current or next query is empty or not a SELECT
                     if not current_query:
                         continue
-                    if not current_query.upper().startswith('SELECT'):
-                        continue
+                    
+                    # Use sqlparse to reliably check query type
+                    try:
+                        parsed_query = sqlparse.parse(current_query)[0]
+                        query_type = parsed_query.get_type()
+                        if query_type != 'SELECT':
+                            continue
+                    except (IndexError, AttributeError):
+                        # If parsing fails, fall back to simple check
+                        if not current_query.upper().strip().startswith('SELECT'):
+                            continue
 
                     # Execute current query using QueryRunner
                     try:
@@ -226,7 +168,7 @@ class DatasetCreator:
                         
                         # Save the query results to a file
                         results_filename = f"results_session_{current_session_id}_query_{i}.pkl"
-                        results_filepath = os.path.join(self.results_dir, results_filename)
+                        results_filepath = self.results_dir / results_filename
                         
                         # Process the DataFrame to handle binary/image data before pickling
                         pickle_safe_results = self._process_for_pickling(curr_results)
@@ -268,7 +210,7 @@ class DatasetCreator:
                     dataset = pd.DataFrame(dataset_rows)
 
                     # Save dataset for this session
-                    output_path = os.path.join(self.output_dir, f"{self.dataset_prefix}_session_{current_session_id}.pkl")
+                    output_path = self.output_dir / f"{self.dataset_prefix}_session_{current_session_id}.pkl"
                     with open(output_path, 'wb') as f:
                         pickle.dump(dataset, f)
 
@@ -288,7 +230,7 @@ class DatasetCreator:
         metadata_df = pd.DataFrame(metadata_rows)
 
         # Save metadata to CSV
-        metadata_csv_path = os.path.join(self.output_dir, 'metadata.csv')
+        metadata_csv_path = self.output_dir / 'metadata.csv'
         metadata_df.to_csv(metadata_csv_path, index=False)
         print(f"Metadata saved to {metadata_csv_path}")
 
