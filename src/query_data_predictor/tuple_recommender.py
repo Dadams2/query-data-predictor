@@ -16,6 +16,7 @@ from query_data_predictor.summary_interestingness import SummaryEvaluator
 class TupleRecommender:
     """
     Recommender for predicting tuples that will appear in subsequent queries.
+    Uses interestingness-based scoring combining association rules and summaries.
     """
     
     def __init__(self, config: Dict[str, Any]):
@@ -30,7 +31,7 @@ class TupleRecommender:
         self.association_evaluator = None
         self.summary_evaluator = None
         
-        # Initialize components based on configuration
+        # Initialize discretizer based on configuration
         if config.get('discretization', {}).get('enabled', True):
             disc_config = config.get('discretization', {})
             self.discretizer = Discretizer(
@@ -76,6 +77,9 @@ class TupleRecommender:
             return pd.DataFrame()
         
         try:
+            # Print number of transactions and attributes for debugging
+            print(f"Number of transactions: {len(encoded_df)}, Number of attributes: {len(attributes)}")
+
             # Mine frequent itemsets using FP-Growth
             frequent_itemsets = fpgrowth(
                 encoded_df, 
@@ -88,369 +92,235 @@ class TupleRecommender:
             # Return empty DataFrame if FP-Growth fails
             print(f"Warning: FP-Growth failed with error: {e}")
             return pd.DataFrame()
-
-    def mine_association_rules(self, df: pd.DataFrame, frequent_itemsets: Optional[pd.DataFrame] = None) -> pd.DataFrame:
-        """
-        Mine association rules from the DataFrame.
-        
-        Args:
-            df: Input DataFrame (should be preprocessed/discretized)
-            frequent_itemsets: Pre-computed frequent itemsets (optional)
-            
-        Returns:
-            DataFrame with association rules
-        """
-        # Get configuration for association rules
-        assoc_config = self.config.get('association_rules', {})
-        
-        # Use provided frequent itemsets or compute them
-        if frequent_itemsets is None:
-            frequent_itemsets = self.compute_frequent_itemsets(df)
-        
-        if frequent_itemsets.empty:
-            return pd.DataFrame()
-        
-        # Create association evaluator
-        self.association_evaluator = AssociationEvaluator(frequent_itemsets)
-        
-        # Mine rules with parameters from config
-        rules_df = self.association_evaluator.mine_association_rules(
-            metric=assoc_config.get('metric', 'confidence'),
-            min_confidence=assoc_config.get('min_threshold', 0.7)
-        )
-        
-        return rules_df
     
-    def generate_summaries(self, df: pd.DataFrame, frequent_itemsets: Optional[pd.DataFrame] = None) -> List[Dict[str, Any]]:
+    def recommend_tuples(self, current_results: pd.DataFrame, top_k: Optional[int] = None) -> pd.DataFrame:
         """
-        Generate summaries from the DataFrame.
+        Recommend tuples for the next query based on interestingness scores.
         
-        Args:
-            df: Input DataFrame (should be preprocessed/discretized)
-            frequent_itemsets: Pre-computed frequent itemsets (optional)
-            
-        Returns:
-            List of summary dictionaries
-        """
-        # Get configuration for summaries
-        summary_config = self.config.get('summaries', {})
-        desired_size = summary_config.get('desired_size', 5)
-        
-        # Use provided frequent itemsets or compute them with lower support for summaries
-        if frequent_itemsets is None:
-            frequent_itemsets = self.compute_frequent_itemsets(df, min_support=0.05)
-        
-        if frequent_itemsets.empty:
-            return []
-        
-        # Create summary evaluator
-        self.summary_evaluator = SummaryEvaluator(frequent_itemsets, desired_size)
-        
-        # Generate summaries
-        weights = summary_config.get('weights')
-        summaries = self.summary_evaluator.summarise_df(
-            df, 
-            desired_size=desired_size,
-            weights=weights
-        )
-        
-        return summaries
-    
-    def recommend_tuples(self, current_results: pd.DataFrame, top_k: Optional[int] = None, frequent_itemsets: Optional[pd.DataFrame] = None) -> pd.DataFrame:
-        """
-        Recommend tuples for the next query based on the current query's results.
+        This method implements the core recommendation logic by:
+        1. Preprocessing the input data (discretization if enabled)
+        2. Converting to transaction format suitable for pattern mining
+        3. Mining frequent itemsets using FP-Growth
+        4. Computing interestingness scores using association rules and/or summaries
+        5. Ranking all tuples by their interestingness scores
+        6. Returning the top-k most interesting tuples
         
         Args:
             current_results: DataFrame with the current query's results
             top_k: Number of top tuples to recommend (overrides config value if provided)
-            frequent_itemsets: Pre-computed frequent itemsets (optional, for performance optimization)
             
         Returns:
-            DataFrame with recommended tuples
+            DataFrame with recommended tuples, ranked by interestingness score
         """
         # Use configuration top_k if not provided
         if top_k is None:
             top_k = self.config.get('recommendation', {}).get('top_k', 10)
         
-        # Get recommendation method from config
-        method = self.config.get('recommendation', {}).get('method', 'association_rules')
-        
-        # Preprocess data
+        # Preprocess data (discretization if enabled)
         processed_df = self.preprocess_data(current_results)
         
-        # If frequent_itemsets provided, use them; otherwise compute in each method
-        # Depending on the method, generate recommendations
+        if processed_df.empty or len(processed_df) < 2:
+            return pd.DataFrame()
+        
+        # Convert to transaction format for pattern mining
+        encoded_df, attributes = self._prepare_data_for_fpgrowth(processed_df)
+        
+        if encoded_df.empty:
+            return pd.DataFrame()
+        
+        # Compute frequent itemsets
+        frequent_itemsets = self.compute_frequent_itemsets(processed_df)
+        
+        if frequent_itemsets.empty:
+            # No patterns found, return top tuples by frequency
+            return processed_df.head(top_k)
+        
+        # Calculate interestingness scores for all tuples
+        scores = self._compute_tuple_interestingness_scores(processed_df, frequent_itemsets)
+        
+        # Add scores to the dataframe
+        scored_df = processed_df.copy()
+        scored_df['interestingness_score'] = scores
+        
+        # Sort by interestingness score and return top-k
+        scored_df = scored_df.sort_values('interestingness_score', ascending=False)
+        
+        # Apply score threshold if configured
+        score_threshold = self.config.get('recommendation', {}).get('score_threshold', 0.0)
+        if score_threshold > 0:
+            scored_df = scored_df[scored_df['interestingness_score'] >= score_threshold]
+        
+        # Return top-k tuples (excluding the score column)
+        result_df = scored_df.head(top_k).drop(columns=['interestingness_score'])
+        
+        return result_df
+    
+    def _compute_tuple_interestingness_scores(self, df: pd.DataFrame, frequent_itemsets: pd.DataFrame) -> pd.Series:
+        """
+        Compute interestingness scores for all tuples using association rules and/or summaries.
+        
+        This method combines scores from different interestingness measures based on configuration:
+        - Association rules: Use rule-based interestingness (confidence, lift, etc.)
+        - Summaries: Use summary-based interestingness (variance, shannon entropy, etc.)
+        - Hybrid: Combine both approaches with configurable weights
+        
+        Args:
+            df: Preprocessed DataFrame with tuples
+            frequent_itemsets: DataFrame with frequent itemsets from FP-Growth
+            
+        Returns:
+            Series with interestingness scores for each tuple
+        """
+        # Get configuration for scoring
+        method = self.config.get('recommendation', {}).get('method', 'hybrid')
+        alpha = 0.5  # Weight for association rules
+        beta = 0.5   # Weight for summaries
+        
+        # Initialize scores
+        rule_scores = pd.Series([0.0] * len(df), index=df.index)
+        summary_scores = pd.Series([0.0] * len(df), index=df.index)
+        
+        # Compute association rule scores if enabled
+        if method in ['association_rules', 'hybrid'] and self.config.get('association_rules', {}).get('enabled', True):
+            try:
+                rule_scores = self._compute_association_rule_scores(df, frequent_itemsets)
+            except Exception as e:
+                print(f"Warning: Association rule scoring failed: {e}")
+        
+        # Compute summary scores if enabled  
+        if method in ['summaries', 'hybrid'] and self.config.get('summaries', {}).get('enabled', True):
+            try:
+                summary_scores = self._compute_summary_scores(df, frequent_itemsets)
+            except Exception as e:
+                print(f"Warning: Summary scoring failed: {e}")
+        
+        # Combine scores based on method
         if method == 'association_rules':
-            return self._recommend_with_association_rules(processed_df, top_k, frequent_itemsets)
+            return rule_scores
         elif method == 'summaries':
-            return self._recommend_with_summaries(processed_df, top_k, frequent_itemsets)
-        elif method == 'hybrid':
-            # TODO: Fix this to make it look more like the contribution in paper
-            if frequent_itemsets is not None:
-                # Use provided frequent itemsets for both methods
-                rule_recs = self._recommend_with_association_rules(processed_df, top_k // 2, frequent_itemsets)
-                summary_recs = self._recommend_with_summaries(processed_df, top_k // 2, frequent_itemsets)
-                
-                # Combine recommendations
-                if rule_recs.empty:
-                    return summary_recs
-                if summary_recs.empty:
-                    return rule_recs
-                    
-                # Combine and deduplicate
-                combined = pd.concat([rule_recs, summary_recs]).drop_duplicates()
-                
-                # Limit to top_k
-                if len(combined) > top_k:
-                    combined = combined.head(top_k)
-                    
-                return combined
-            else:
-                # Use the existing hybrid method that computes frequent itemsets once
-                return self._recommend_hybrid(processed_df, top_k)
-        else:
-            raise ValueError(f"Unknown recommendation method: {method}")
+            return summary_scores
+        else:  # hybrid
+            return alpha * rule_scores + beta * summary_scores
     
-    def _recommend_with_association_rules(self, df: pd.DataFrame, top_k: int, frequent_itemsets: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    def _compute_association_rule_scores(self, df: pd.DataFrame, frequent_itemsets: pd.DataFrame) -> pd.Series:
         """
-        Recommend tuples using association rules.
+        Compute interestingness scores using association rules.
+        
+        Args:
+            df: Preprocessed DataFrame  
+            frequent_itemsets: DataFrame with frequent itemsets
+            
+        Returns:
+            Series with association rule-based scores
+        """
+        # Create association evaluator
+        self.association_evaluator = AssociationEvaluator(frequent_itemsets)
+        
+        # Mine association rules with config parameters
+        assoc_config = self.config.get('association_rules', {})
+        rules_df = self.association_evaluator.mine_association_rules(
+            metric=assoc_config.get('metric', 'confidence'),
+            min_confidence=assoc_config.get('min_threshold', 0.7)
+        )
+        
+        if rules_df.empty:
+            return pd.Series([0.0] * len(df), index=df.index)
+        
+        # Get measure columns for scoring
+        interestingness_config = self.config.get('interestingness', {})
+        measure_columns = ['confidence', 'lift', 'leverage']  # Default measures
+        
+        # Evaluate tuples using association rules
+        scores = self.association_evaluator.evaulate_df(
+            df, 
+            rules_df, 
+            measure_columns=measure_columns,
+            parallel=len(df) > 1000
+        )
+        
+        return scores
+    
+    def _compute_summary_scores(self, df: pd.DataFrame, frequent_itemsets: pd.DataFrame) -> pd.Series:
+        """
+        Compute interestingness scores using summaries.
         
         Args:
             df: Preprocessed DataFrame
-            top_k: Number of tuples to recommend
-            frequent_itemsets: Pre-computed frequent itemsets (optional)
+            frequent_itemsets: DataFrame with frequent itemsets
             
         Returns:
-            DataFrame with recommended tuples
+            Series with summary-based scores
         """
-        # Mine association rules
-        rules_df = self.mine_association_rules(df, frequent_itemsets)
+        # Create summary evaluator
+        summary_config = self.config.get('summaries', {})
+        desired_size = summary_config.get('desired_size', 5)
         
-        if rules_df.empty:
-            # No rules found, return empty DataFrame
-            return pd.DataFrame()
+        self.summary_evaluator = SummaryEvaluator(frequent_itemsets, desired_size)
         
-        # Get threshold from config
-        score_threshold = self.config.get('recommendation', {}).get('score_threshold', 0.5)
-        
-        # Filter rules by threshold
-        rules_df = rules_df[rules_df['confidence'] >= score_threshold]
-        
-        if rules_df.empty:
-            return pd.DataFrame()
-        
-        # Sort rules by confidence
-        rules_df = rules_df.sort_values('confidence', ascending=False)
-        
-        # Generate recommended tuples from rules
-        recommendations = self._generate_tuples_from_rules(rules_df, top_k)
-        
-        return recommendations
-    
-    def _recommend_with_summaries(self, df: pd.DataFrame, top_k: int, frequent_itemsets: Optional[pd.DataFrame] = None) -> pd.DataFrame:
-        """
-        Recommend tuples using summaries.
-        
-        Args:
-            df: Preprocessed DataFrame
-            top_k: Number of tuples to recommend
-            frequent_itemsets: Pre-computed frequent itemsets (optional)
-            
-        Returns:
-            DataFrame with recommended tuples
-        """
         # Generate summaries
-        summaries = self.generate_summaries(df, frequent_itemsets)
+        weights = summary_config.get('weights')
+        summaries = self.summary_evaluator.summarise_df(
+            df,
+            desired_size=desired_size,
+            weights=weights
+        )
         
         if not summaries:
-            # No summaries found, return empty DataFrame
-            return pd.DataFrame()
+            return pd.Series([0.0] * len(df), index=df.index)
         
-        # Convert summaries to tuples
-        recommendations = self._generate_tuples_from_summaries(summaries, top_k)
+        # Evaluate tuples using summaries
+        scores = self.summary_evaluator.evaulate_df(df, summaries)
         
-        return recommendations
+        return scores
     
-    def _recommend_hybrid(self, df: pd.DataFrame, top_k: int) -> pd.DataFrame:
-        """
-        Recommend tuples using a hybrid of association rules and summaries.
-        
-        Args:
-            df: Preprocessed DataFrame
-            top_k: Number of tuples to recommend
-            
-        Returns:
-            DataFrame with recommended tuples
-        """
-        # Compute frequent itemsets once for both methods
-        frequent_itemsets = self.compute_frequent_itemsets(df)
-        
-        # Get recommendations from both methods using shared frequent itemsets
-        rule_recs = self._recommend_with_association_rules(df, top_k // 2, frequent_itemsets)
-        summary_recs = self._recommend_with_summaries(df, top_k // 2, frequent_itemsets)
-        
-        # Combine recommendations
-        if rule_recs.empty:
-            return summary_recs
-        if summary_recs.empty:
-            return rule_recs
-            
-        # Combine and deduplicate
-        combined = pd.concat([rule_recs, summary_recs]).drop_duplicates()
-        
-        # Limit to top_k
-        if len(combined) > top_k:
-            combined = combined.head(top_k)
-            
-        return combined
-    
-    def _prepare_data_for_fpgrowth(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _prepare_data_for_fpgrowth(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
         """
         Convert a DataFrame to a format suitable for fpgrowth algorithm using TransactionEncoder.
+        
+        This method prepares the data for frequent pattern mining by:
+        1. Prepending column names to values to create meaningful itemsets
+        2. Converting to transaction format 
+        3. One-hot encoding using TransactionEncoder for efficient fpgrowth processing
         
         Args:
             df: Input DataFrame
             
         Returns:
-            Encoded DataFrame suitable for fpgrowth
+            Tuple of (encoded DataFrame suitable for fpgrowth, list of original attributes)
         """
         if df.empty:
-            return pd.DataFrame()
+            return pd.DataFrame(), []
         
-        # Filter out columns with too many unique values to prevent memory explosion
-        # filtered_df = df.copy()
-        # for col in df.columns:
-        #     if df[col].nunique() > 100:  # Arbitrary threshold to avoid explosion of columns
-        #         filtered_df = filtered_df.drop(columns=[col])
+        # Prepend column names to create meaningful item identifiers
+        df_with_names = self.prepend_column_names(df.copy())
         
-        # if filtered_df.empty:
-        #     return pd.DataFrame()
-        
-        df = self.prepend_column_names(df)
-        
-        # Convert DataFrame to transactions using the original format (column_value)
-        # This creates meaningful item identifiers that can be sorted
-        transactions = df.to_dict(orient="records")
-        attributes = list(df.columns)
+        # Convert DataFrame to transactions
+        transactions = df_with_names.to_dict(orient="records")
+        attributes = list(df.columns)  # Original attribute names
         transaction_items = [list(t.values()) for t in transactions]
+        
         # Use TransactionEncoder for efficient one-hot encoding
         te = TransactionEncoder()
         te_ary = te.fit(transaction_items).transform(transaction_items)
+        
         # Create encoded DataFrame
         encoded_df = pd.DataFrame(te_ary, columns=te.columns_)
+        
         return encoded_df, attributes
-    
-    def _generate_tuples_from_rules(self, rules_df: pd.DataFrame, top_k: int) -> pd.DataFrame:
-        """
-        Generate tuples from association rules.
-        
-        Args:
-            rules_df: DataFrame with association rules
-            top_k: Maximum number of tuples to generate
-            
-        Returns:
-            DataFrame with generated tuples
-        """
-        # Extract consequents from rules
-        all_items = []
-        for _, rule in rules_df.iterrows():
-            consequents = list(rule['consequents'])
-            all_items.extend(consequents)
-            
-            # Stop if we have enough items
-            if len(all_items) >= top_k:
-                break
-        
-        # Convert items to a DataFrame
-        if not all_items:
-            return pd.DataFrame()
-            
-        # Parse items (format: "column_value") into columns and values
-        tuple_data = {}
-        
-        for item in all_items[:top_k]:
-            # Split by first underscore
-            parts = item.split('_', 1)
-            if len(parts) == 2:
-                col, val = parts
-                
-                # Initialize column in data if not present
-                if col not in tuple_data:
-                    tuple_data[col] = []
-                    
-                # Add value to column
-                tuple_data[col].append(val)
-        
-        # Create DataFrame from tuple data
-        # Ensure all columns have the same length by padding with None
-        max_len = max([len(vals) for vals in tuple_data.values()]) if tuple_data else 0
-        
-        for col, vals in tuple_data.items():
-            if len(vals) < max_len:
-                tuple_data[col].extend([None] * (max_len - len(vals)))
-        
-        return pd.DataFrame(tuple_data) if tuple_data else pd.DataFrame()
-    
-    def _generate_tuples_from_summaries(self, summaries: List[Dict[str, Any]], top_k: int) -> pd.DataFrame:
-        """
-        Generate tuples from summaries.
-        
-        Args:
-            summaries: List of summary dictionaries
-            top_k: Maximum number of tuples to generate
-            
-        Returns:
-            DataFrame with generated tuples
-        """
-        # Extract attributes from summaries
-        tuple_data = {}
-        
-        for summary in summaries:
-            for attr, val in summary.items():
-                # Skip count attribute
-                if attr == 'count':
-                    continue
-                    
-                # Skip wildcard values
-                if val == '*':
-                    continue
-                
-                # Initialize column in data if not present
-                if attr not in tuple_data:
-                    tuple_data[attr] = []
-                
-                # Parse the value (format: "attribute_value")
-                parts = val.split('_', 1)
-                if len(parts) == 2:
-                    # Add value to column
-                    tuple_data[attr].append(parts[1])
-        
-        # Create DataFrame from tuple data
-        # Ensure all columns have the same length by padding with None
-        max_len = max([len(vals) for vals in tuple_data.values()]) if tuple_data else 0
-        
-        for col, vals in tuple_data.items():
-            if len(vals) < max_len:
-                tuple_data[col].extend([None] * (max_len - len(vals)))
-        
-        df = pd.DataFrame(tuple_data) if tuple_data else pd.DataFrame()
-        
-        # Limit to top_k rows
-        if len(df) > top_k:
-            df = df.head(top_k)
-            
-        return df
 
-
-    def prepend_column_names(self, df):
+    def prepend_column_names(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Prepend the column name to all the values in the DataFrame.
         
-        Parameters:
-        df (pd.DataFrame): The DataFrame containing the data.
+        This creates meaningful itemsets where each item is formatted as "column_value",
+        which helps with interpretability and prevents conflicts between values
+        from different columns.
+        
+        Args:
+            df: The DataFrame containing the data.
         
         Returns:
-        pd.DataFrame: DataFrame with column names prepended to the values.
+            DataFrame with column names prepended to the values.
         """
         for column in df.columns:
             df[column] = df[column].apply(lambda x: f"{column}_{x}")
