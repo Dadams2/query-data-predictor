@@ -1,4 +1,4 @@
-from mlxtend.frequent_patterns import association_rules
+from query_data_predictor.association_rules import association_rules
 from joblib import Parallel, delayed
 import pandas as pd
 import logging
