@@ -282,7 +282,7 @@ class TestTupleRecommenderPerformance:
         assert time_per_row.max() < 0.1, f"Time per row too high: {time_per_row.max():.6f}s"
         assert memory_per_row.max() < 1.0, f"Memory per row too high: {memory_per_row.max():.4f}MB"
     
-    def test_config_impact_on_performance(self, dataloader, query_result_sequence):
+    def test_config_impact_on_performance(self, dataloader, query_result_sequence, performance_config):
         """Test how different configuration parameters impact performance."""
         sessions = dataloader.get_sessions()
         
@@ -312,7 +312,7 @@ class TestTupleRecommenderPerformance:
         
         for config_name, config_override in configs_to_test:
             # Create modified config
-            test_config = self.performance_config.copy()
+            test_config = performance_config.copy()
             
             # Deep merge the override
             for section, params in config_override.items():
