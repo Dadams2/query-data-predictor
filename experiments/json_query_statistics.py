@@ -5,6 +5,11 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import os
 import datetime
+import logging
+
+# Set up logging for this script
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 DATA_PATH = Path(__file__).parent.parent / "data" / "sdss_joined_sample.json"
 REPORT_DIR = Path(__file__).parent.parent / "reports"
@@ -82,7 +87,8 @@ df = pd.DataFrame.from_dict(stats, orient='index', columns=['query_count'])
 
 # Generate statistics
 stats_summary = df['query_count'].describe()
-print(stats_summary)
+logger.info("Query Statistics Summary:")
+logger.info(f"\n{stats_summary}")
 
 # Additional metrics
 additional_stats = f"""
@@ -91,7 +97,8 @@ Mode queries per session: {df['query_count'].mode().values[0]}
 Range of queries: {df['query_count'].min()} to {df['query_count'].max()}
 Total number of queries across all sessions: {df['query_count'].sum()}
 """
-print(additional_stats)
+logger.info("Additional Metrics:")
+logger.info(additional_stats)
 
 # Keep track of generated images
 image_paths = []
@@ -158,4 +165,4 @@ report_path = REPORT_DIR / report_filename
 with open(report_path, 'w') as f:
     f.write(html_report)
 
-print(f"\nReport generated successfully at: {report_path}")
+logger.info(f"Report generated successfully at: {report_path}")

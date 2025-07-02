@@ -5,6 +5,11 @@ from query_data_predictor.query_runner import QueryRunner
 from query_data_predictor.dataset_creator import DatasetCreator
 from pathlib import Path
 from query_data_predictor.sdss_csv_importer import SDSSCSVImporter
+import logging
+
+# Set up logging for this script
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -28,13 +33,13 @@ loader = SDSSCSVImporter(SAMPLE_CSV_PATH)
 creator = DatasetCreator(data_loader=loader, query_runner=runner, output_dir=OUTPUT_DIR, results_dir=QUERY_RESULTS_DIR)
 dataset_info = creator.build_dataset()
 
-print(len(dataset_info))
-print(creator.data_loader.get_sessions())
+logger.info(f"Built dataset with {len(dataset_info)} sessions")
+logger.info(f"Available sessions: {creator.data_loader.get_sessions()}")
 file = dataset_info[1]["file_path"]
-# print if file exists and its size
-print(f"File exists: {os.path.exists(file)}")
-print(f"File size: {os.path.getsize(file)} bytes")
-# print md5 hash of the file
+# Log if file exists and its size
+logger.info(f"File exists: {os.path.exists(file)}")
+logger.info(f"File size: {os.path.getsize(file)} bytes")
+# Log md5 hash of the file
 import hashlib
 if not os.path.exists(file):
     raise FileNotFoundError(f"File {file} does not exist.") 
@@ -42,4 +47,4 @@ if os.path.getsize(file) == 0:
     raise ValueError(f"File {file} is empty.")  
 with open(file, "rb") as f:
     file_hash = hashlib.md5(f.read()).hexdigest()
-print(f"MD5 hash of the file: {file_hash}") 
+logger.info(f"MD5 hash of the file: {file_hash}")
