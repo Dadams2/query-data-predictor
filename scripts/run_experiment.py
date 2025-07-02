@@ -41,16 +41,10 @@ from query_data_predictor.experiment_runner import ExperimentRunner
 def main(data_path: Path, config_path: Path, session_id: str, log_level: str):
     """Run query prediction experiments."""
     # Set up logging
-    logging.basicConfig(
-        level=getattr(logging, log_level.upper()),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler(f"run_experiment_{session_id or 'all'}.log")
-        ]
-    )
+    from query_data_predictor.logging_config import setup_logging
+    setup_logging(log_level=log_level.upper())
     
-    logger = logging.getLogger("run_experiment")
+    logger = logging.getLogger(__name__)
     
     try:
         # Initialize the experiment runner

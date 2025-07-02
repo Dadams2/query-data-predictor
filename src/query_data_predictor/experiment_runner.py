@@ -19,6 +19,8 @@ from query_data_predictor.metrics import EvaluationMetrics
 from query_data_predictor.recommenders.tuple_recommender import TupleRecommender
 
 
+import logging
+
 class ExperimentRunner:
     """
     Main class for running experiments and evaluating query predictions.
@@ -32,8 +34,7 @@ class ExperimentRunner:
             data_path: Path to the dataset directory containing metadata.csv
             config_path: Optional path to configuration file
         """
-        # Set up logging
-        self._setup_logging()
+        self.logger = logging.getLogger(__name__)
         
         # Load configuration
         self.logger.info("Loading configuration...")
@@ -60,17 +61,7 @@ class ExperimentRunner:
         self.output_dir = Path(output_config.get('results_dir', 'experiment_results'))
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
-    def _setup_logging(self):
-        """Set up logging configuration."""
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.StreamHandler(),
-                logging.FileHandler(f"experiment_runner_{int(time.time())}.log")
-            ]
-        )
-        self.logger = logging.getLogger('ExperimentRunner')
+    
         
     def run_experiment_for_session(self, session_id: str, gap: int = 1) -> Dict[str, Any]:
         """
