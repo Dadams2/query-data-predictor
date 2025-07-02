@@ -182,6 +182,18 @@ class InterestingnessRecommender(BaseRecommender):
         return df
 
     def recommend_tuples(self, current_results: pd.DataFrame) -> pd.DataFrame:
+        """
+        Recommend tuples based on interestingness scores.
+        
+        Args:
+            current_results: DataFrame with current query results
+            
+        Returns:
+            DataFrame with recommended tuples
+        """
+        # Validate input
+        if not isinstance(current_results, pd.DataFrame):
+            raise ValueError("current_results must be a pandas DataFrame")
 
         # discretize the data if enabled
         processed_df = self.preprocess_data(current_results)

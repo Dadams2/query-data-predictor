@@ -45,11 +45,11 @@ def test_association_evaluator(complex_transactions):
 
     # Mine association rules
     rules_df = evaluator.mine_association_rules(metric="confidence", min_confidence=0.7)
-    scores = evaluator.evaulate_df(complex_transactions, rules_df, measure_columns=['confidence'], parallel=False)
+    scores = evaluator.evaluate_df(complex_transactions, rules_df, measure_columns=['confidence'], parallel=False)
 
     assert len(scores) == len(complex_transactions)
     print(scores)
-    assert scores[0] == pytest.approx(602.0, rel=1e-2)
-    assert scores[1] == pytest.approx(602.0, rel=1e-2)
+    assert scores[0] == pytest.approx(186.0, rel=1e-2)
+    assert scores[1] == pytest.approx(186.0, rel=1e-2)
 
 

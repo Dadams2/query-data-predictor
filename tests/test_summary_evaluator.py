@@ -36,5 +36,5 @@ def test_summary_evaluator(complex_transactions):
     summaries = evaluator.summarise_df(complex_transactions, desired_size=4)
     
     # Assert the summaries are not empty
-    scores = evaluator.evaulate_df(complex_transactions, summaries)
+    scores = evaluator.evaluate_df(complex_transactions, summaries)
     assert scores[0] == 5
