@@ -187,6 +187,8 @@ class TupleRecommender:
         # Performance optimization for large datasets
         use_sampling = len(df) > 1000
         sample_size = min(1000, len(df)) if use_sampling else len(df)
+
+
         
         # Get configuration for scoring
         method = self.config.get('recommendation', {}).get('method', 'hybrid')
@@ -197,11 +199,11 @@ class TupleRecommender:
         rule_scores = pd.Series([0.0] * len(df), index=df.index)
         summary_scores = pd.Series([0.0] * len(df), index=df.index)
         
+
         # Apply sampling if needed
         if use_sampling:
             sample_indices = np.random.choice(df.index, size=sample_size, replace=False)
             sample_df = df.loc[sample_indices]
-            logger.info(f"Using sampling for large dataset: {len(df)} -> {sample_size} rows")
         else:
             sample_df = df
             sample_indices = df.index

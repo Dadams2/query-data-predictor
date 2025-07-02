@@ -8,7 +8,6 @@ import time
 import psutil
 import os
 from pathlib import Path
-from fixtures import sample_config
 from query_data_predictor.recommenders.tuple_recommender import TupleRecommender
 from query_data_predictor.dataloader import DataLoader
 from query_data_predictor.query_result_sequence import QueryResultSequence
