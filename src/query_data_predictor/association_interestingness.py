@@ -33,7 +33,7 @@ class AssociationEvaluator:
         return rules
     
 
-    def evaulate_df(self, transactions_df, rules_df, measure_columns=None, parallel=True, n_jobs=-1):
+    def evaluate_df(self, transactions_df, rules_df, measure_columns=None, parallel=True, n_jobs=-1):
         """
         Computes the interestingness contribution for each transaction based on matching rules.
         
@@ -114,7 +114,7 @@ class AssociationEvaluator:
             return total_score
         
         # Use parallel processing for larger datasets if enabled
-        if parallel and len(transactions_df) > 1000:
+        if parallel and len(transactions_df) > 250:
             try:
                 scores = Parallel(n_jobs=n_jobs)(
                     delayed(calculate_row_score_optimized)(row) for _, row in transactions_df.iterrows()

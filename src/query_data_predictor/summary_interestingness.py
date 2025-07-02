@@ -42,7 +42,7 @@ class SummaryEvaluator:
         append_count_to_summaries(final_summaries, transactions, attributes)
         return final_summaries
 
-    def evaulate_df(self, transactions_df, summaries_df):
+    def evaluate_df(self, transactions_df, summaries_df):
         """
         Evaluate the summaries using the BUS algorithm.
 

@@ -3,7 +3,7 @@ from query_data_predictor.summary_interestingness import SummaryEvaluator
 from mlxtend.frequent_patterns import fpgrowth
 
 
-def test_association_evaluator(simple_transactions):
+def test_summary_evaluator(simple_transactions):
     """
     Test the AssociationEvaluator class.
     """
@@ -23,7 +23,7 @@ def test_association_evaluator(simple_transactions):
 
     assert scores[0] == 5
 
-def test_association_evaluator(complex_transactions):
+def test_summary_evaluator(complex_transactions):
     """
     Test the AssociationEvaluator class.
     """
