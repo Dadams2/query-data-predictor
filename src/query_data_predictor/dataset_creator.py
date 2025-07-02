@@ -4,11 +4,14 @@ from typing import List, Dict, Optional, Any
 import sqlparse
 import pickle
 from pathlib import Path
+import logging
 
 from query_data_predictor.query_runner import QueryRunner
 from query_data_predictor.importer import DataImporter
 from query_data_predictor.sdss_json_importer import JsonDataImporter
 from query_data_predictor.feature_extractor import FeatureExtractor
+
+logger = logging.getLogger(__name__)
 
 class DatasetCreator:
     """
@@ -131,12 +134,12 @@ class DatasetCreator:
             if session_id is not None:
                 sessions = [session_id] if session_id in sessions else None
             if sessions is None:
-                print(f"Session {session_id} not found")
+                logger.warning(f"Session {session_id} not found")
                 return pd.DataFrame(columns=['session_id', 'filepath'])
 
             for current_session_id in sessions:
                 queries = self.data_loader.get_queries_for_session(current_session_id)
-                print(f"Processing session {current_session_id} with {len(queries)} queries")
+                logger.info(f"Processing session {current_session_id} with {len(queries)} queries")
                 dataset_rows = []
 
                 # Process each query and its next query
@@ -179,7 +182,7 @@ class DatasetCreator:
                             
                     except Exception as e:
                         # Log the error details
-                        print(f"Error executing current query: {e}")
+                        logger.error(f"Error executing current query: {e}")
                         continue
                     
                     try:
@@ -190,7 +193,7 @@ class DatasetCreator:
                         from IPython import embed
                         embed()
                         # Log the error details
-                        print(f"Error extracting features: {e}")
+                        logger.error(f"Error extracting features: {e}")
                         continue
 
                     # Combine all features
@@ -220,7 +223,7 @@ class DatasetCreator:
                         'filepath': output_path
                     })
 
-                    print(f"Dataset for session {current_session_id} saved to {output_path} with {len(dataset_rows)} samples")
+                    logger.info(f"Dataset for session {current_session_id} saved to {output_path} with {len(dataset_rows)} samples")
 
         finally:
             # Disconnect QueryRunner
@@ -232,7 +235,7 @@ class DatasetCreator:
         # Save metadata to CSV
         metadata_csv_path = self.output_dir / 'metadata.csv'
         metadata_df.to_csv(metadata_csv_path, index=False)
-        print(f"Metadata saved to {metadata_csv_path}")
+        logger.info(f"Metadata saved to {metadata_csv_path}")
 
         return metadata_df
     

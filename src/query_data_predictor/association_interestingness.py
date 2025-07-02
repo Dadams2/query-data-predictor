@@ -1,6 +1,9 @@
 from mlxtend.frequent_patterns import association_rules
 from joblib import Parallel, delayed
 import pandas as pd
+import logging
+
+logger = logging.getLogger(__name__)
 
 class AssociationEvaluator:
 
@@ -118,7 +121,7 @@ class AssociationEvaluator:
                 )
                 return pd.Series(scores, index=transactions_df.index)
             except ImportError:
-                print("joblib not installed. Falling back to sequential processing.")
+                logger.warning("joblib not installed. Falling back to sequential processing.")
                 
         # Standard apply for smaller datasets or when parallel is disabled
         return transactions_df.apply(calculate_row_score_optimized, axis=1)

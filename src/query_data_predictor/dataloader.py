@@ -1,10 +1,12 @@
-
 # this class is used to read and get the result data for queries. It is given a data path which should contain a metadata.csv file with the session_id and filepath columns for the queries
 import pandas as pd
 import numpy as np 
 import pickle
 import pathlib
+import logging
 from query_data_predictor.importer import DataImporter
+
+logger = logging.getLogger(__name__)
 
 class DataLoader():
     """
@@ -16,9 +18,11 @@ class DataLoader():
         # read in metadata.csv 
         self.file_path = self.dataset_dir / "metadata.csv"
         if not self.file_path.exists():
+            logger.error(f"CSV file not found: {self.file_path}")
             raise FileNotFoundError(f"CSV file not found: {self.file_path}")
         self.metadata = pd.read_csv(self.file_path)
         self.memory_cache = {}
+        logger.info(f"DataLoader initialized with {len(self.metadata)} sessions from {self.file_path}")
     
     # TODO LRU cache for results per session or something
     def get_results_for_query(self, session_id: int, query_id: int) -> np.ndarray:

@@ -2,6 +2,9 @@ import pandas as pd
 import numpy as np
 import pickle
 from sklearn.cluster import KMeans
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Discretizer:
     def __init__(self, method='equal_width', bins=5, save_path=None, load_path=None):
@@ -23,13 +26,22 @@ class Discretizer:
             self.load_params(load_path)
     
     def load_params(self, path):
-        with open(path, 'rb') as f:
-            self.discretization_params = pickle.load(f)
+        try:
+            with open(path, 'rb') as f:
+                self.discretization_params = pickle.load(f)
+            logger.info(f"Loaded discretization parameters from {path}")
+        except Exception as e:
+            logger.error(f"Failed to load discretization parameters from {path}: {e}")
+            raise
     
     def save_params(self):
         if self.save_path:
-            with open(self.save_path, 'wb') as f:
-                pickle.dump(self.discretization_params, f)
+            try:
+                with open(self.save_path, 'wb') as f:
+                    pickle.dump(self.discretization_params, f)
+                logger.debug(f"Saved discretization parameters to {self.save_path}")
+            except Exception as e:
+                logger.error(f"Failed to save discretization parameters to {self.save_path}: {e}")
     
     def discretize_dataframe(self, df):
         """
@@ -43,6 +55,7 @@ class Discretizer:
         """
         # Get float columns
         float_columns = df.select_dtypes(include=[np.float64]).columns
+        logger.info(f"Discretizing {len(float_columns)} float columns using {self.method} method with {self.bins} bins")
         
         for column in float_columns:
             if column in self.discretization_params:

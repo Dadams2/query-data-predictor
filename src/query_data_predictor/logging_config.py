@@ -28,7 +28,7 @@ def setup_logging(log_level="INFO"):
                 "class": "logging.handlers.RotatingFileHandler",
                 "level": "INFO",
                 "formatter": "detailed",
-                "filename": "app.log",
+                "filename": "query_data_predictor.log",
                 "maxBytes": 10485760,  # 10MB
                 "backupCount": 5,
                 "encoding": "utf8",

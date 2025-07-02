@@ -5,7 +5,10 @@ import pandas as pd
 from typing import Dict, Any, Optional, List
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
+import logging
 from .importer import DataImporter
+
+logger = logging.getLogger(__name__)
 
 # Constants
 SESSION_ID_COLUMN = "sessionID"
@@ -91,7 +94,7 @@ class JsonDataImporter(DataImporter):
                 if not exists:
                     # Create the database
                     cur.execute(f"CREATE DATABASE {target_dbname}")
-                    print(f"Created database: {target_dbname}")
+                    logger.info(f"Created database: {target_dbname}")
 
             # Close the temporary connection
             temp_conn.close()

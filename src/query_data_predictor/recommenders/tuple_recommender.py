@@ -7,10 +7,13 @@ import numpy as np
 from typing import List, Dict, Set, Tuple, Any, Union, Optional
 from mlxtend.frequent_patterns import fpgrowth
 from mlxtend.preprocessing import TransactionEncoder
+import logging
 
 from ..discretizer import Discretizer
 from ..association_interestingness import AssociationEvaluator
 from ..summary_interestingness import SummaryEvaluator
+
+logger = logging.getLogger(__name__)
 
 
 class TupleRecommender:
@@ -77,8 +80,8 @@ class TupleRecommender:
             return pd.DataFrame()
         
         try:
-            # Print number of transactions and attributes for debugging
-            print(f"Number of transactions: {len(encoded_df)}, Number of attributes: {len(attributes)}")
+            # Log number of transactions and attributes for debugging
+            logger.debug(f"Number of transactions: {len(encoded_df)}, Number of attributes: {len(attributes)}")
 
             # Mine frequent itemsets using FP-Growth
             frequent_itemsets = fpgrowth(
@@ -90,7 +93,7 @@ class TupleRecommender:
             return frequent_itemsets
         except Exception as e:
             # Return empty DataFrame if FP-Growth fails
-            print(f"Warning: FP-Growth failed with error: {e}")
+            logger.warning(f"FP-Growth failed with error: {e}")
             return pd.DataFrame()
     
     def recommend_tuples(self, current_results: pd.DataFrame, top_k: Optional[int] = None) -> pd.DataFrame:
@@ -198,7 +201,7 @@ class TupleRecommender:
         if use_sampling:
             sample_indices = np.random.choice(df.index, size=sample_size, replace=False)
             sample_df = df.loc[sample_indices]
-            print(f"Using sampling for large dataset: {len(df)} -> {sample_size} rows")
+            logger.info(f"Using sampling for large dataset: {len(df)} -> {sample_size} rows")
         else:
             sample_df = df
             sample_indices = df.index
@@ -215,7 +218,7 @@ class TupleRecommender:
                 else:
                     rule_scores = sample_rule_scores
             except Exception as e:
-                print(f"Warning: Association rule scoring failed: {e}")
+                logger.warning(f"Association rule scoring failed: {e}")
                 # Fall back to simple frequency-based scoring for edge cases
                 rule_scores = self._compute_fallback_scores(df)
         
@@ -231,7 +234,7 @@ class TupleRecommender:
                 else:
                     summary_scores = sample_summary_scores
             except Exception as e:
-                print(f"Warning: Summary scoring failed: {e}")
+                logger.warning(f"Summary scoring failed: {e}")
                 # Fall back to simple frequency-based scoring for edge cases
                 summary_scores = self._compute_fallback_scores(df)
         
@@ -307,7 +310,7 @@ class TupleRecommender:
                 rules_df = rules_df.nlargest(max_rules, metric_col)
             else:
                 rules_df = rules_df.head(max_rules)
-            print(f"Limited rules to top {max_rules} for performance (from {len(rules_df)} total)")
+            logger.info(f"Limited rules to top {max_rules} for performance (from {len(rules_df)} total rules originally)")
         
         # Get measure columns for scoring
         measure_columns = ['confidence', 'lift', 'leverage']  # Default measures
@@ -398,7 +401,7 @@ class TupleRecommender:
                 df_limited[col] = df_limited[col].apply(
                     lambda x: x if x in top_values else 'OTHER'
                 )
-                print(f"Column {col}: limited from {unique_values} to {df_limited[col].nunique()} unique values")
+                logger.debug(f"Column {col}: limited from {unique_values} to {df_limited[col].nunique()} unique values")
         
         # Prepend column names to create meaningful item identifiers
         df_with_names = self.prepend_column_names(df_limited)
@@ -415,7 +418,7 @@ class TupleRecommender:
         # Create encoded DataFrame
         encoded_df = pd.DataFrame(te_ary, columns=te.columns_)
         
-        print(f"Encoded DataFrame: {len(encoded_df)} rows, {len(encoded_df.columns)} columns")
+        logger.debug(f"Encoded DataFrame: {len(encoded_df)} rows, {len(encoded_df.columns)} columns")
         
         return encoded_df, attributes
 

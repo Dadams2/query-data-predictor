@@ -9,6 +9,9 @@ import json
 from typing import Dict, Any, List, Optional, Union, Literal
 from pathlib import Path
 from pydantic import BaseModel, Field, validator, root_validator
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # Define Pydantic models for configuration sections

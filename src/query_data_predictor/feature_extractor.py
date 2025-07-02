@@ -5,6 +5,9 @@ Feature extraction utilities for SQL queries and results.
 import pandas as pd
 import sqlparse
 from typing import List, Dict, Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class FeatureExtractor:
@@ -103,6 +106,6 @@ class FeatureExtractor:
                             features[f'col_{i}_std'] = col_data.std()
                 except Exception as e:
                     # Log the specific error but continue processing
-                    print(f"Error processing statistics for column {col}: {e}")
+                    logger.warning(f"Error processing statistics for column {col}: {e}")
         
         return features
