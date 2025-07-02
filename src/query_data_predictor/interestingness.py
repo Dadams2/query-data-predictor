@@ -25,6 +25,8 @@ class InterestingnessMeasures:
 
     def variance(self) -> float:
         """Calculate the IVariance measure"""
+        if self.m <= 1:
+            return 0.0  # Avoid division by zero for single element
         return np.sum((self.P - self.q[0]) ** 2) / (self.m - 1)
 
     def simpson(self) -> float:

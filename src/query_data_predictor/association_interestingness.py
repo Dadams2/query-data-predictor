@@ -25,10 +25,12 @@ class AssociationEvaluator:
         # mine arules passing kwargs
         metric = kwargs.get('metric', 'confidence')
         min_confidence = kwargs.get('min_confidence', 0.5)
+        max_rules = kwargs.get('max_rules', 1000)  # Limit rules for performance
 
         rules = association_rules(self.frequent_itemsets,
                                 metric=metric,
-                                min_threshold=min_confidence)
+                                min_threshold=min_confidence,
+                                max_rules=max_rules)
         
         return rules
     

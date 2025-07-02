@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import pandas as pd
 
 def convert_itemset_to_summary(itemset: tuple, attributes: List[str]) -> Dict[str, str]:
@@ -156,6 +156,7 @@ def bus_summarization_with_candidates(transactions: List[Dict[str, Any]],
                                       candidate_summaries: List[Dict[str, str]]) -> List[Dict[str, Any]]:
     """
     Run the BUS summarization algorithm using provided candidate summaries.
+    Optimized version with early termination and better performance.
 
     Parameters
     ----------
@@ -176,17 +177,30 @@ def bus_summarization_with_candidates(transactions: List[Dict[str, Any]],
     attributes = list(weights.keys())
     summaries = [t.copy() for t in transactions]  # Start with each transaction
     
+    # Early termination if already at desired size
+    if len(summaries) <= desired_size:
+        return summaries
+    
+    # Limit candidate summaries for performance
+    max_candidates = min(len(candidate_summaries), 500)  # Limit candidates
+    candidate_summaries = candidate_summaries[:max_candidates]
+    
+    # Precompute candidate losses to avoid recalculation
+    candidate_losses = {i: summary_loss(cand, weights) for i, cand in enumerate(candidate_summaries)}
+    
     # Safety measures to prevent infinite loops
-    max_iterations = len(transactions) * 2  # Reasonable upper bound
+    max_iterations = min(len(transactions), 100)  # Limit iterations
     iteration_count = 0
     previous_summary_count = len(summaries)
     stagnation_counter = 0
     max_stagnation = 3  # Allow 3 iterations without progress
 
     while len(summaries) > desired_size and iteration_count < max_iterations:
-        candidate = select_best(candidate_summaries, summaries, weights)
-        if candidate is None:
+        candidate_idx = select_best_optimized(candidate_summaries, summaries, weights, candidate_losses, attributes)
+        if candidate_idx is None:
             break
+            
+        candidate = candidate_summaries[candidate_idx]
         covered = [s for s in summaries if covers(candidate, s, attributes)]
         if len(covered) <= 1:
             break
@@ -207,6 +221,49 @@ def bus_summarization_with_candidates(transactions: List[Dict[str, Any]],
         iteration_count += 1
         
     return summaries
+
+
+def select_best_optimized(candidates: List[Dict[str, str]],
+                         summaries: List[Dict[str, Any]],
+                         weights: Dict[str, float],
+                         candidate_losses: Dict[int, float],
+                         attributes: List[str]) -> Optional[int]:
+    """
+    Optimized version of select_best that uses precomputed losses and better indexing.
+    
+    Returns the index of the best candidate instead of the candidate itself.
+    """
+    # Precompute summary losses for each summary (avoid recalculating)
+    summary_losses = [summary_loss(s, weights) for s in summaries]
+    
+    best_candidate_idx = None
+    best_loss_val = float('inf')
+    best_gain = 0
+    
+    for i, cand in enumerate(candidates):
+        # Use precomputed candidate loss
+        cand_loss = candidate_losses[i]
+        
+        # Find covered summaries more efficiently
+        covered_indices = []
+        for j, s in enumerate(summaries):
+            if covers(cand, s, attributes):
+                covered_indices.append(j)
+        
+        gain = len(covered_indices) - 1
+        if gain <= 1:
+            continue
+            
+        # Calculate total extra loss using precomputed summary losses
+        total_extra_loss = sum(cand_loss - summary_losses[j] for j in covered_indices)
+        
+        if (best_candidate_idx is None or total_extra_loss < best_loss_val or
+                (total_extra_loss == best_loss_val and gain > best_gain)):
+            best_candidate_idx = i
+            best_loss_val = total_extra_loss
+            best_gain = gain
+            
+    return best_candidate_idx
 
 # =============================================================================
 # Utility Functions for Summary Counts

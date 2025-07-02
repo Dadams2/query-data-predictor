@@ -25,6 +25,12 @@ class InterestingnessRecommender(BaseRecommender):
         self.association_evaluator = None
         self.summary_evaluator = None
         
+        # Performance caching
+        self._frequent_itemsets_cache = None
+        self._encoded_df_cache = None
+        self._attributes_cache = None
+        self._last_processed_df_hash = None
+        
         # Initialize discretizer based on configuration
         if config.get('discretization', {}).get('enabled', True):
             disc_config = config.get('discretization', {})
@@ -50,15 +56,24 @@ class InterestingnessRecommender(BaseRecommender):
 
     def compute_frequent_itemsets(self, df: pd.DataFrame, min_support: Optional[float] = None) -> pd.DataFrame:
         """
-        Compute frequent itemsets from the DataFrame using FP-Growth.
+        Compute frequent itemsets from the DataFrame using FP-Growth with caching.
         
         Args:
             df: Input DataFrame (should be preprocessed/discretized)
             min_support: Minimum support threshold (uses config if not provided)
             
         Returns:
-            DataFrame with frequent itemsets
+            Tuple of (frequent_itemsets, encoded_df, attributes)
         """
+        # Generate hash for caching
+        df_hash = pd.util.hash_pandas_object(df).sum()
+        
+        # Check if we can use cached results
+        if (self._frequent_itemsets_cache is not None and 
+            self._last_processed_df_hash == df_hash):
+            logger.debug("Using cached frequent itemsets")
+            return self._frequent_itemsets_cache, self._encoded_df_cache, self._attributes_cache
+        
         # Get configuration for association rules if min_support not provided
         if min_support is None:
             assoc_config = self.config.get('association_rules', {})
@@ -68,7 +83,7 @@ class InterestingnessRecommender(BaseRecommender):
         encoded_df, attributes = self._prepare_data_for_fpgrowth(df)
         
         if encoded_df.empty:
-            return pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame(), []
         
         try:
             # Log number of transactions and attributes for debugging
@@ -81,23 +96,25 @@ class InterestingnessRecommender(BaseRecommender):
                 use_colnames=True,
                 verbose=0  # Suppress verbose output for performance
             )
+            
+            # Cache results
+            self._frequent_itemsets_cache = frequent_itemsets
+            self._encoded_df_cache = encoded_df
+            self._attributes_cache = attributes
+            self._last_processed_df_hash = df_hash
+            
             return frequent_itemsets, encoded_df, attributes
         except Exception as e:
             # Return empty DataFrame if FP-Growth fails
             logger.warning(f"FP-Growth failed with error: {e}")
-            return pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame(), []
 
 
 
     def _prepare_data_for_fpgrowth(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
         """
         Convert a DataFrame to a format suitable for fpgrowth algorithm using TransactionEncoder.
-        
-        This method prepares the data for frequent pattern mining by:
-        1. Limiting unique values per column to prevent explosion
-        2. Prepending column names to values to create meaningful itemsets
-        3. Converting to transaction format 
-        4. One-hot encoding using TransactionEncoder for efficient fpgrowth processing
+        Optimized version with better memory usage and performance.
         
         Args:
             df: Input DataFrame
@@ -108,9 +125,11 @@ class InterestingnessRecommender(BaseRecommender):
         if df.empty:
             return pd.DataFrame(), []
         
+        # Adaptive limits based on data size
+        max_unique_values = min(15, max(5, len(df) // 50))  # Adaptive limit
+        
         # Limit unique values per column to prevent combinatorial explosion
         df_limited = df.copy()
-        max_unique_values = 20  # Limit to prevent too many items
         
         for col in df_limited.columns:
             unique_values = df_limited[col].nunique()
@@ -126,17 +145,19 @@ class InterestingnessRecommender(BaseRecommender):
         # Prepend column names to create meaningful item identifiers
         df_with_names = self.prepend_column_names(df_limited)
         
-        # Convert DataFrame to transactions
-        transactions = df_with_names.to_dict(orient="records")
-        attributes = list(df.columns)  # Original attribute names
-        transaction_items = [list(t.values()) for t in transactions]
+        # More efficient transaction conversion
+        transactions = []
+        for _, row in df_with_names.iterrows():
+            transactions.append([str(val) for val in row.values if pd.notna(val)])
+        
+        attributes = list(df.columns)
         
         # Use TransactionEncoder for efficient one-hot encoding
         te = TransactionEncoder()
-        te_ary = te.fit(transaction_items).transform(transaction_items)
+        te_ary = te.fit(transactions).transform(transactions)
         
-        # Create encoded DataFrame
-        encoded_df = pd.DataFrame(te_ary, columns=te.columns_)
+        # Create encoded DataFrame with boolean types for FP-Growth compatibility
+        encoded_df = pd.DataFrame(te_ary, columns=te.columns_, dtype=bool)  # Use bool for FP-Growth
         
         logger.debug(f"Encoded DataFrame: {len(encoded_df)} rows, {len(encoded_df.columns)} columns")
         
@@ -240,12 +261,38 @@ class InterestingnessRecommender(BaseRecommender):
             try:
                 # Use AssociationEvaluator to compute scores based on frequent itemsets
                 self.association_evaluator = AssociationEvaluator(frequent_itemsets)
+                
+                # Adaptive thresholds based on data size
+                min_confidence = self.config.get('association_rules', {}).get('min_threshold', 0.5)
+                max_rules = 500 if len(encoded_df) > 1000 else 1000
+                if len(encoded_df) > 1000:
+                    min_confidence = max(min_confidence, 0.7)  # Higher threshold for large datasets
+                
                 association_rules = self.association_evaluator.mine_association_rules(
                     metric=self.config.get('association_rules', {}).get('metric', 'confidence'),
-                    min_confidence=self.config.get('association_rules', {}).get('min_threshold', 0.5)
+                    min_confidence=min_confidence,
+                    max_rules=max_rules
                 )
-                # TODO fix config for this
-                rule_scores = self.association_evaluator.evaluate_df(encoded_df, association_rules, measure_columns=['confidence', 'lift', 'leverage'])
+                
+                # Limit rules for performance (use the already computed max_rules or a fallback)
+                fallback_max_rules = 500 if len(encoded_df) > 1000 else 1000
+                if len(association_rules) > fallback_max_rules:
+                    # Sort by metric and take top rules
+                    metric_col = self.config.get('association_rules', {}).get('metric', 'confidence')
+                    if metric_col in association_rules.columns:
+                        association_rules = association_rules.nlargest(fallback_max_rules, metric_col)
+                    else:
+                        association_rules = association_rules.head(fallback_max_rules)
+                    logger.info(f"Limited association rules to {fallback_max_rules} for performance")
+                
+                # Use parallel processing for large datasets
+                use_parallel = len(encoded_df) > 300 and len(association_rules) > 50
+                rule_scores = self.association_evaluator.evaluate_df(
+                    encoded_df, 
+                    association_rules, 
+                    measure_columns=['confidence', 'lift', 'leverage'],
+                    parallel=use_parallel
+                )
                 
                 if rule_scores.empty:
                     logger.warning("Association rule scoring returned empty scores. Using fallback.")
@@ -253,18 +300,21 @@ class InterestingnessRecommender(BaseRecommender):
 
             except Exception as e:
                 logger.error(f"Association rule scoring failed: {e}")
-                # Fall back to simple frequency-based scoring for edge cases
-                # rule_scores = self._compute_fallback_scores(df)
+                rule_scores = pd.Series([0.0] * len(encoded_df), index=encoded_df.index)
         
         # Compute summary scores if enabled  
         if method in ['summaries', 'hybrid'] and self.config.get('summaries', {}).get('enabled', True):
             try:
-                # TODO add config options for this
-                self.summary_evaluator = SummaryEvaluator(frequent_itemsets)
+                # Adaptive summary size based on data size
+                desired_size = self.config.get('summaries', {}).get('desired_size', 10)
+                if len(encoded_df) > 1000:
+                    desired_size = min(desired_size, len(encoded_df) // 100)  # Limit summary size for large datasets
+                
+                self.summary_evaluator = SummaryEvaluator(frequent_itemsets, desired_size)
                 summaries_df = self.summary_evaluator.summarise_df(
                     transactions_df=encoded_df,
                     weights=self.config.get('summaries', {}).get('weights', None),
-                    desired_size=self.config.get('summaries', {}).get('desired_size', 10)
+                    desired_size=desired_size
                 )
                 summary_scores = self.summary_evaluator.evaluate_df(
                     encoded_df, 
@@ -272,8 +322,7 @@ class InterestingnessRecommender(BaseRecommender):
                 )
             except Exception as e:
                 logger.warning(f"Summary scoring failed: {e}")
-                # Fall back to simple frequency-based scoring for edge cases
-                # summary_scores = self._compute_fallback_scores(df)
+                summary_scores = pd.Series([0.0] * len(encoded_df), index=encoded_df.index)
         
         # Combine scores based on method
         if method == 'association_rules':

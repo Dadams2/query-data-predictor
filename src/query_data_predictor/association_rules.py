@@ -16,7 +16,7 @@ import pandas as pd
 
 
 def association_rules(df, metric="confidence", min_threshold=0.8, support_only=False,
-                     max_antecedent_len=None, min_antecedent_len=1, batch_size=100):
+                     max_antecedent_len=None, min_antecedent_len=1, batch_size=200, max_rules=None):
     """Generates a DataFrame of association rules including the
     metrics 'score', 'confidence', and 'lift'
 
@@ -222,6 +222,14 @@ def association_rules(df, metric="confidence", min_threshold=0.8, support_only=F
                         rule_antecedents.append(antecedent)
                         rule_consequents.append(consequent)
                         rule_supports.append([sAC, sA, sC])
+                        
+                        # Early termination if max_rules is reached
+                        if max_rules and len(rule_antecedents) >= max_rules:
+                            break
+        
+        # Early termination if max_rules is reached
+        if max_rules and len(rule_antecedents) >= max_rules:
+            break
 
     # check if frequent rule was generated
     if not rule_supports:
