@@ -326,7 +326,7 @@ class TupleRecommender:
         # Evaluate tuples using association rules with encoded data
         # Use parallel processing for large datasets
         use_parallel = len(encoded_df) > 500 and len(rules_df) > 100
-        scores = self.association_evaluator.evaulate_df(
+        scores = self.association_evaluator.evaluate_df(
             encoded_df, 
             rules_df, 
             measure_columns=measure_columns,
@@ -367,7 +367,7 @@ class TupleRecommender:
             return pd.Series([0.0] * len(df), index=df.index)
         
         # Evaluate tuples using summaries with the correctly formatted data
-        scores = self.summary_evaluator.evaulate_df(df_with_names, summaries)
+        scores = self.summary_evaluator.evaluate_df(df_with_names, summaries)
         
         return scores
     

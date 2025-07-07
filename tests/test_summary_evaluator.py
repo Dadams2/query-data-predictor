@@ -19,7 +19,7 @@ def test_summary_evaluator(simple_transactions):
     assert summaries is not None
     assert len(summaries) == 1
 
-    scores = evaluator.evaulate_df(simple_transactions, summaries)
+    scores = evaluator.evaluate_df(simple_transactions, summaries)
 
     assert scores[0] == 5
 

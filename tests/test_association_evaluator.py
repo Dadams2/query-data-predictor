@@ -24,7 +24,7 @@ def test_association_evaluator(simple_transactions):
     assert "confidence" in rules_df.columns
 
     # Evaluate interestingness scores
-    scores = evaluator.evaulate_df(simple_transactions, rules_df, measure_columns=['confidence'], parallel=False)
+    scores = evaluator.evaluate_df(simple_transactions, rules_df, measure_columns=['confidence'], parallel=False)
 
     assert scores[0] == pytest.approx(1.50, rel=1e-2)
     assert scores[1] == pytest.approx(3.25, rel=1e-2)
