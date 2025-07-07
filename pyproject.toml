@@ -9,13 +9,17 @@ authors = [
 requires-python = ">=3.10"
 dependencies = [
     "click>=8.1.7",
+    "dash>=3.1.1",
     "dotenv>=0.9.9",
     "duckdb>=1.2.2",
     "joblib>=1.5.0",
+    "jupyter>=1.1.1",
     "matplotlib>=3.10.1",
     "mlxtend>=0.23.4",
+    "nbformat>=5.10.4",
     "numexpr>=2.10.2",
     "pandas>=2.2.3",
+    "plotly>=6.2.0",
     "polars>=1.29.0",
     "psycopg2>=2.9.10",
     "pydantic>=2.7.0",
