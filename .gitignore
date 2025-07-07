@@ -19,3 +19,5 @@ data/
 debug*
 results
 experiment_results/
+*.md
+!README.md
