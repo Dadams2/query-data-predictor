@@ -19,15 +19,60 @@ warnings.filterwarnings('ignore')
 plt.style.use('seaborn-v0_8')
 sns.set_palette("husl")
 
-def load_all_results(results_dir="experiments/benchmark_results"):
-    """Load all benchmark results from the specified directory."""
-    results_path = Path(results_dir)
+def find_benchmark_directories(root_dir="experiments"):
+    """Find all benchmark result directories and determine which need analysis."""
+    root_path = Path(root_dir)
+    
+    # Find all directories that start with "benchmark_results"
+    benchmark_dirs = [d for d in root_path.iterdir() 
+                     if d.is_dir() and d.name.startswith("benchmark_results")]
+    
+    if not benchmark_dirs:
+        raise FileNotFoundError(f"No benchmark result directories found in {root_path}")
+    
+    print(f"Found {len(benchmark_dirs)} benchmark result directories:")
+    
+    dirs_to_analyze = []
+    for benchmark_dir in sorted(benchmark_dirs):
+        print(f"  Checking: {benchmark_dir}")
+        
+        # Look for CSV files in this directory
+        csv_files = list(benchmark_dir.glob("benchmark_results_*.csv"))
+        if not csv_files:
+            print(f"    No CSV files found, skipping")
+            continue
+            
+        # Check if corresponding analysis directory exists
+        analysis_dir_name = benchmark_dir.name.replace("benchmark_results", "benchmark_analysis")
+        analysis_dir = root_path / analysis_dir_name
+        
+        if analysis_dir.exists():
+            print(f"    Analysis already exists at {analysis_dir}, skipping")
+            continue
+            
+        print(f"    Needs analysis - found {len(csv_files)} CSV files")
+        dirs_to_analyze.append(benchmark_dir)
+    
+    if not dirs_to_analyze:
+        print("All benchmark directories have been analyzed.")
+        return []
+    
+    print(f"\nDirectories that need analysis: {len(dirs_to_analyze)}")
+    for dir_path in dirs_to_analyze:
+        print(f"  {dir_path}")
+    
+    return dirs_to_analyze
+
+def load_results_from_directory(benchmark_dir):
+    """Load all benchmark results from a specific directory."""
+    benchmark_path = Path(benchmark_dir)
     
     # Find all CSV files with benchmark results pattern
-    csv_files = list(results_path.glob("benchmark_results_*.csv"))
+    csv_files = list(benchmark_path.glob("benchmark_results_*.csv"))
     if not csv_files:
-        raise FileNotFoundError(f"No benchmark results found in {results_path}")
+        raise FileNotFoundError(f"No benchmark results found in {benchmark_path}")
     
+    print(f"Loading results from {benchmark_path}")
     print(f"Found {len(csv_files)} benchmark result files:")
     
     all_dataframes = []
@@ -38,6 +83,7 @@ def load_all_results(results_dir="experiments/benchmark_results"):
             # Add a column to track which file the data came from
             df['source_file'] = csv_file.name
             df['file_timestamp'] = csv_file.stat().st_mtime
+            df['source_directory'] = benchmark_path.name
             all_dataframes.append(df)
         except Exception as e:
             print(f"  Warning: Could not load {csv_file}: {e}")
@@ -172,13 +218,14 @@ def identify_best_performers(df):
         print(f"  Most Memory Efficient Algorithm: {algorithms_only['memory_delta'].idxmin()}")
         print(f"  Most Diverse Algorithm: {algorithms_only['diversity'].idxmax()}")
 
-def generate_detailed_visualizations(df, output_dir="experiments/benchmark_analysis"):
+def generate_detailed_visualizations(df, benchmark_dir_name, root_dir="experiments"):
     """Generate detailed visualizations for the analysis."""
-    # Append current date and time to output directory
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir_with_timestamp = f"{output_dir}_{timestamp}"
-    output_path = Path(output_dir_with_timestamp)
+    # Create analysis directory name based on benchmark directory name
+    analysis_dir_name = benchmark_dir_name.replace("benchmark_results", "benchmark_analysis")
+    output_path = Path(root_dir) / analysis_dir_name
     output_path.mkdir(parents=True, exist_ok=True)
+    
+    print(f"Generating visualizations in {output_path}")
     
     successful = df[df['success'] == True]
     
@@ -437,38 +484,170 @@ def analyze_by_source_file(df):
     
     return df
 
-def main():
-    """Main analysis function."""
-    print("COMPREHENSIVE BENCHMARK ANALYSIS")
-    print("="*60)
+def analyze_benchmark_directory(benchmark_dir, root_dir="experiments"):
+    """Analyze a single benchmark directory."""
+    print(f"\n{'='*80}")
+    print(f"ANALYZING BENCHMARK DIRECTORY: {benchmark_dir.name}")
+    print(f"{'='*80}")
     
     try:
-        # Load all results
-        df = load_all_results()
-        print(f"Loaded {len(df)} total benchmark results")
+        # Load results from this directory
+        df = load_results_from_directory(benchmark_dir)
         
-        # Run analyses
+        # Run all analyses
+        print(f"\nRunning comprehensive analysis...")
         df_with_timestamps = analyze_by_source_file(df)
         successful_df = analyze_performance(df)
         analyze_scalability(df)
         analyze_quality(df)
         identify_best_performers(df)
-        generate_detailed_visualizations(df)
+        generate_detailed_visualizations(df, benchmark_dir.name, root_dir)
         generate_recommendations(df)
-        analyze_by_source_file(df)
         
-        print(f"\\n" + "="*60)
-        print("ANALYSIS COMPLETE")
-        print("="*60)
-        print(f"Analyzed {df['source_file'].nunique()} benchmark run(s) with {len(df)} total results.")
-        print(f"Check the experiments/benchmark_analysis_{{timestamp}} directory for detailed visualizations.")
+        # Save a summary report
+        analysis_dir_name = benchmark_dir.name.replace("benchmark_results", "benchmark_analysis")
+        analysis_dir = Path(root_dir) / analysis_dir_name
+        summary_file = analysis_dir / "analysis_summary.txt"
+        
+        with open(summary_file, 'w') as f:
+            f.write(f"BENCHMARK ANALYSIS SUMMARY\n")
+            f.write(f"="*50 + "\n\n")
+            f.write(f"Source Directory: {benchmark_dir}\n")
+            f.write(f"Analysis Directory: {analysis_dir}\n")
+            f.write(f"Analysis Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Total Results: {len(df)}\n")
+            f.write(f"Successful Results: {len(df[df['success'] == True])}\n")
+            f.write(f"Source Files: {df['source_file'].nunique()}\n")
+            f.write(f"Benchmark Runs: {df['source_file'].unique().tolist()}\n")
+        
+        print(f"\nAnalysis completed for {benchmark_dir.name}")
+        print(f"Results saved to: {analysis_dir}")
+        return True
         
     except Exception as e:
-        print(f"Error during analysis: {e}")
-        return 1
+        print(f"Error analyzing {benchmark_dir.name}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def analyze_all_combined(root_dir="experiments"):
+    """Legacy function to analyze all benchmark results combined."""
+    print("ANALYZING ALL BENCHMARK RESULTS COMBINED")
+    print("="*60)
     
-    return 0
+    try:
+        # Find all benchmark directories
+        root_path = Path(root_dir)
+        benchmark_dirs = [d for d in root_path.iterdir() 
+                         if d.is_dir() and d.name.startswith("benchmark_results")]
+        
+        if not benchmark_dirs:
+            raise FileNotFoundError(f"No benchmark result directories found in {root_path}")
+        
+        # Load all results from all directories
+        all_dataframes = []
+        for benchmark_dir in benchmark_dirs:
+            try:
+                df = load_results_from_directory(benchmark_dir)
+                all_dataframes.append(df)
+            except Exception as e:
+                print(f"Warning: Could not load from {benchmark_dir}: {e}")
+                continue
+        
+        if not all_dataframes:
+            raise ValueError("No valid benchmark result directories could be loaded")
+        
+        # Combine all results
+        combined_df = pd.concat(all_dataframes, ignore_index=True)
+        print(f"Combined {len(combined_df)} total results from {len(all_dataframes)} directories")
+        
+        # Run analyses on combined data
+        df_with_timestamps = analyze_by_source_file(combined_df)
+        successful_df = analyze_performance(combined_df)
+        analyze_scalability(combined_df)
+        analyze_quality(combined_df)
+        identify_best_performers(combined_df)
+        
+        # Generate visualizations with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        generate_detailed_visualizations(combined_df, f"benchmark_analysis_combined_{timestamp}", root_dir)
+        generate_recommendations(combined_df)
+        
+        print(f"\nCombined analysis completed")
+        return True
+        
+    except Exception as e:
+        print(f"Error during combined analysis: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def main():
+    """Main analysis function."""
+    print("COMPREHENSIVE BENCHMARK ANALYSIS")
+    print("="*60)
+    print("Searching for benchmark directories that need analysis...")
+    
+    try:
+        # Find benchmark directories that need analysis
+        dirs_to_analyze = find_benchmark_directories()
+        
+        if not dirs_to_analyze:
+            print("No benchmark directories need analysis. Exiting.")
+            return 0
+        
+        # Analyze each directory
+        successful_analyses = 0
+        failed_analyses = 0
+        
+        for benchmark_dir in dirs_to_analyze:
+            success = analyze_benchmark_directory(benchmark_dir)
+            if success:
+                successful_analyses += 1
+            else:
+                failed_analyses += 1
+        
+        # Final summary
+        print(f"\n" + "="*60)
+        print("BATCH ANALYSIS COMPLETE")
+        print("="*60)
+        print(f"Directories processed: {len(dirs_to_analyze)}")
+        print(f"Successful analyses: {successful_analyses}")
+        print(f"Failed analyses: {failed_analyses}")
+        
+        if successful_analyses > 0:
+            print(f"\nAnalysis directories created:")
+            root_path = Path("experiments")
+            analysis_dirs = [d for d in root_path.iterdir() 
+                           if d.is_dir() and d.name.startswith("benchmark_analysis")]
+            for analysis_dir in sorted(analysis_dirs):
+                print(f"  {analysis_dir}")
+        
+        return 0 if failed_analyses == 0 else 1
+        
+    except Exception as e:
+        print(f"Error during batch analysis: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
 
 if __name__ == "__main__":
     import sys
-    sys.exit(main())
+    import argparse
+    
+    # Set up command line arguments
+    parser = argparse.ArgumentParser(description='Analyze benchmark results')
+    parser.add_argument('--combined', action='store_true', 
+                       help='Analyze all benchmark results combined instead of individually')
+    parser.add_argument('--root-dir', default='experiments',
+                       help='Root directory to search for benchmark results (default: experiments)')
+    
+    args = parser.parse_args()
+    
+    if args.combined:
+        # Run combined analysis
+        success = analyze_all_combined(args.root_dir)
+        sys.exit(0 if success else 1)
+    else:
+        # Run individual directory analysis (default behavior)
+        sys.exit(main())

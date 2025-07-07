@@ -71,17 +71,24 @@ class ComprehensiveBenchmark:
     Comprehensive benchmark suite for recommender systems.
     """
     
-    def __init__(self, dataset_dir: str = "data/datasets"):
+    def __init__(self, dataset_dir: str = "data/datasets", output_dir: str = "experiments/benchmark_results"):
         """
         Initialize the benchmark suite.
         
         Args:
             dataset_dir: Directory containing the dataset files
+            output_dir: Base directory for saving all benchmark outputs
         """
         self.dataset_dir = Path(dataset_dir)
         self.dataloader = DataLoader(str(self.dataset_dir))
         self.query_result_sequence = QueryResultSequence(self.dataloader)
         self.evaluator = EvaluationMetrics()
+        
+        # Configure output directory with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.output_dir = Path(f"{output_dir}_{timestamp}")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Output directory: {self.output_dir}")
         
         # Results storage
         self.benchmark_results = []
@@ -545,24 +552,19 @@ class ComprehensiveBenchmark:
         
         return analysis
     
-    def generate_visualizations(self, results_df: pd.DataFrame, output_dir: str = "data/benchmark_results"):
+    def generate_visualizations(self, results_df: pd.DataFrame):
         """
         Generate visualizations for benchmark results.
         
         Args:
             results_df: DataFrame with benchmark results
-            output_dir: Directory to save visualizations
         """
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir_with_timestamp = f"{output_dir}_{timestamp}"
-        output_path = Path(output_dir_with_timestamp)
-        output_path.mkdir(parents=True, exist_ok=True)
-        
         successful_results = results_df[results_df['success'] == True]
         if successful_results.empty:
             logger.warning("No successful results to visualize")
             return
+        
+        logger.info(f"Generating visualizations in {self.output_dir}")
         
         # Set up the plotting style
         plt.style.use('seaborn-v0_8')
@@ -599,7 +601,7 @@ class ComprehensiveBenchmark:
         axes[1, 1].tick_params(axis='x', rotation=45)
         
         plt.tight_layout()
-        plt.savefig(output_path / 'performance_comparison.png', dpi=300, bbox_inches='tight')
+        plt.savefig(self.output_dir / 'performance_comparison.png', dpi=300, bbox_inches='tight')
         plt.close()
         
         # 2. Scalability analysis
@@ -626,7 +628,7 @@ class ComprehensiveBenchmark:
         axes[1].grid(True)
         
         plt.tight_layout()
-        plt.savefig(output_path / 'scalability_analysis.png', dpi=300, bbox_inches='tight')
+        plt.savefig(self.output_dir / 'scalability_analysis.png', dpi=300, bbox_inches='tight')
         plt.close()
         
         # 3. Success rate analysis
@@ -640,32 +642,27 @@ class ComprehensiveBenchmark:
         plt.xticks(rotation=45)
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
-        plt.savefig(output_path / 'success_rates.png', dpi=300, bbox_inches='tight')
+        plt.savefig(self.output_dir / 'success_rates.png', dpi=300, bbox_inches='tight')
         plt.close()
         
-        logger.info(f"Visualizations saved to {output_path}")
+        logger.info(f"Visualizations saved to {self.output_dir}")
     
-    def save_results(self, results_df: pd.DataFrame, analysis: Dict[str, Any], 
-                    output_dir: str = "experiments/benchmark_results"):
+    def save_results(self, results_df: pd.DataFrame, analysis: Dict[str, Any]):
         """
         Save benchmark results and analysis to files.
         
         Args:
             results_df: DataFrame with benchmark results
             analysis: Analysis results dictionary
-            output_dir: Directory to save results
         """
-        output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
-        
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         # Save raw results
-        results_file = output_path / f"benchmark_results_{timestamp}.csv"
+        results_file = self.output_dir / f"benchmark_results_{timestamp}.csv"
         results_df.to_csv(results_file, index=False)
         
         # Save analysis
-        analysis_file = output_path / f"benchmark_analysis_{timestamp}.json"
+        analysis_file = self.output_dir / f"benchmark_analysis_{timestamp}.json"
         # Convert numpy types to JSON serializable types
         def convert_numpy(obj):
             if isinstance(obj, np.integer):
@@ -675,13 +672,30 @@ class ComprehensiveBenchmark:
             elif isinstance(obj, np.ndarray):
                 return obj.tolist()
             elif isinstance(obj, pd.DataFrame):
-                return obj.to_dict()
+                # Convert DataFrame to dict, handling multi-level columns
+                df_dict = {}
+                for col in obj.columns:
+                    if isinstance(col, tuple):
+                        # Convert tuple column names to strings
+                        col_key = "_".join(str(x) for x in col)
+                    else:
+                        col_key = str(col)
+                    df_dict[col_key] = obj[col].to_dict()
+                return df_dict
             return obj
         
         # Deep convert analysis dictionary
         def deep_convert(d):
             if isinstance(d, dict):
-                return {k: deep_convert(v) for k, v in d.items()}
+                converted = {}
+                for k, v in d.items():
+                    # Ensure all dictionary keys are strings
+                    if isinstance(k, tuple):
+                        key = "_".join(str(x) for x in k)
+                    else:
+                        key = str(k)
+                    converted[key] = deep_convert(v)
+                return converted
             elif isinstance(d, list):
                 return [deep_convert(v) for v in d]
             else:
@@ -693,10 +707,10 @@ class ComprehensiveBenchmark:
             json.dump(analysis_serializable, f, indent=2, default=str)
         
         # Save summary report
-        report_file = output_path / f"benchmark_report_{timestamp}.txt"
+        report_file = self.output_dir / f"benchmark_report_{timestamp}.txt"
         self._generate_text_report(results_df, analysis, report_file)
         
-        logger.info(f"Results saved to {output_path}")
+        logger.info(f"Results saved to {self.output_dir}")
         logger.info(f"  Raw results: {results_file}")
         logger.info(f"  Analysis: {analysis_file}")
         logger.info(f"  Report: {report_file}")
@@ -746,6 +760,22 @@ class ComprehensiveBenchmark:
                 failure_counts = failures['recommender'].value_counts()
                 for method, count in failure_counts.items():
                     f.write(f"{method}: {count} failures\\n")
+        
+        logger.info(f"Text report saved to {output_file}")
+    
+    @property
+    def output_directory(self) -> Path:
+        """Get the output directory path."""
+        return self.output_dirna
+    
+    def get_output_info(self) -> Dict[str, str]:
+        """Get information about output directory and files."""
+        return {
+            'output_directory': str(self.output_dir),
+            'timestamp': self.output_dir.name.split('_')[-1] if '_' in self.output_dir.name else '',
+            'exists': self.output_dir.exists(),
+            'files_count': len(list(self.output_dir.glob('*'))) if self.output_dir.exists() else 0
+        }
 
 
 def main():
@@ -753,10 +783,11 @@ def main():
     print("Starting Comprehensive Recommender Benchmark")
     print("=" * 50)
     
-    # Initialize benchmark
+    # Initialize benchmark with output directory
     try:
-        benchmark = ComprehensiveBenchmark()
+        benchmark = ComprehensiveBenchmark(output_dir="experiments/benchmark_results")
         print(f"Initialized benchmark with {len(benchmark.sessions)} sessions")
+        print(f"Output directory: {benchmark.output_dir}")
     except Exception as e:
         print(f"Failed to initialize benchmark: {e}")
         return 1
@@ -835,6 +866,7 @@ def main():
             print(f"  Highest hit rate: {best_hit_rate}")
     
     print("\\nBenchmark completed successfully!")
+    print(f"All results saved to: {benchmark.output_dir}")
     return 0
 
 
