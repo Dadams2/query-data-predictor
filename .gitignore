@@ -16,3 +16,4 @@ data/
 *.log
 *.pkl
 *.html
+debug*
