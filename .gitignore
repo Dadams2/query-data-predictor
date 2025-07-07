@@ -17,3 +17,4 @@ data/
 *.pkl
 *.html
 debug*
+experiment_results
