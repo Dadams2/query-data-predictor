@@ -34,7 +34,7 @@ class ExperimentAnalyzer:
     
     def __init__(self, 
                  experiment_data_dir: str,
-                 output_dir: str = "results/experiment/experiment_results_analysis/analysis",
+                 output_dir: str = None,
                  include_tuple_analysis: bool = False):
         """
         Initialize the analyzer.
@@ -45,7 +45,7 @@ class ExperimentAnalyzer:
             include_tuple_analysis: Whether to load and analyze actual tuple data
         """
         self.data_dir = Path(experiment_data_dir)
-        self.output_dir = Path(output_dir)
+        self.output_dir = self.data_dir / "analysis" if output_dir is None else Path(output_dir)
         self.include_tuples = include_tuple_analysis
         self.collector = ExperimentCollector(base_output_dir=str(self.data_dir))
         
@@ -1835,8 +1835,7 @@ def main():
     
     # Initialize analyzer with global output directory
     analyzer = ExperimentAnalyzer(
-        experiment_data_dir="experiment_results",
-        output_dir="results/experiment/experiment_results_analysis/analysis",
+        experiment_data_dir="results/experiment/experiment_results_20250708_132243",
         include_tuple_analysis=False
     )
     
