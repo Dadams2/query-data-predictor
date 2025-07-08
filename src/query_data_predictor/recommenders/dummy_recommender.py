@@ -40,7 +40,8 @@ class DummyRecommender(BaseRecommender):
             return pd.DataFrame()
         
         # Apply output limiting based on configuration
-        return self._limit_output(current_results.copy())
+        # return self._limit_output(current_results.copy())
+        return current_results.copy()
     
     def name(self) -> str:
         """
