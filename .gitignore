@@ -17,7 +17,6 @@ data/
 *.pkl
 *.html
 debug*
-results
-experiment_results/
+results/*
 *.md
 !README.md
