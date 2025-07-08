@@ -34,17 +34,23 @@ class ExperimentAnalyzer:
     
     def __init__(self, 
                  experiment_data_dir: str,
+                 output_dir: str = "results/experiment/experiment_results_analysis/analysis",
                  include_tuple_analysis: bool = False):
         """
         Initialize the analyzer.
         
         Args:
             experiment_data_dir: Directory containing experimental data
+            output_dir: Global output directory for all generated files
             include_tuple_analysis: Whether to load and analyze actual tuple data
         """
         self.data_dir = Path(experiment_data_dir)
+        self.output_dir = Path(output_dir)
         self.include_tuples = include_tuple_analysis
         self.collector = ExperimentCollector(base_output_dir=str(self.data_dir))
+        
+        # Ensure output directory exists
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # Loaded data
         self.results_df: Optional[pd.DataFrame] = None
@@ -113,12 +119,14 @@ class ExperimentAnalyzer:
         
         return df
     
-    def generate_performance_dashboard(self, output_file: str = "performance_dashboard.html"):
+    def generate_performance_dashboard(self, filename: str = "performance_dashboard.html"):
         """Generate comprehensive interactive performance dashboard."""
         
         if self.results_df is None or self.results_df.empty:
             logger.error("No data loaded. Call load_all_results() first.")
             return
+        
+        output_file = self.output_dir / filename
         
         # Create subplots
         fig = make_subplots(
@@ -377,12 +385,14 @@ class ExperimentAnalyzer:
         
         return trends
     
-    def create_detailed_comparison_report(self, output_file: str = "detailed_comparison_report.html"):
+    def create_detailed_comparison_report(self, filename: str = "detailed_comparison_report.html"):
         """Create a detailed HTML comparison report."""
         
         if self.results_df is None or self.results_df.empty:
             logger.error("No data loaded. Call load_all_results() first.")
             return
+        
+        output_file = self.output_dir / filename
         
         # Generate statistical summary
         stats_summary = self.create_statistical_summary()
@@ -518,14 +528,14 @@ class ExperimentAnalyzer:
         
         return html
     
-    def export_for_further_analysis(self, output_dir: str = "analysis_exports"):
+    def export_for_further_analysis(self, subdir: str = "exports"):
         """Export data in various formats for further analysis."""
         
         if self.results_df is None or self.results_df.empty:
             logger.error("No data loaded. Call load_all_results() first.")
             return
         
-        export_dir = Path(output_dir)
+        export_dir = self.output_dir / subdir
         export_dir.mkdir(exist_ok=True)
         
         # Export main results
@@ -563,55 +573,10 @@ class ExperimentAnalyzer:
         with open(export_dir / "statistical_summary.json", 'w') as f:
             json.dump(stats_summary_serializable, f, indent=2, default=str)
         
-        # Export for R analysis
-        self._export_for_r(export_dir)
-        
         # Export for Python/Jupyter analysis
         self._create_analysis_notebook(export_dir)
         
         logger.info(f"Analysis exports saved to {export_dir}")
-    
-    def _export_for_r(self, output_dir: Path):
-        """Export data formatted for R analysis."""
-        
-        # Create R-friendly column names
-        r_df = self.results_df.copy()
-        r_df.columns = [col.replace('_', '.') for col in r_df.columns]
-        
-        # Save as CSV with R-friendly format
-        r_df.to_csv(output_dir / "results_for_r.csv", index=False)
-        
-        # Create R analysis script
-        r_script = '''
-# Load the experimental results
-results <- read.csv("results_for_r.csv")
-
-# Basic summary
-summary(results)
-
-# ANOVA analysis
-if("eval.overlap.accuracy" %in% names(results)) {
-  model <- aov(eval.overlap.accuracy ~ meta.recommender.name, data=results)
-  summary(model)
-  
-  # Post-hoc tests
-  TukeyHSD(model)
-}
-
-# Visualizations
-library(ggplot2)
-
-# Accuracy by recommender
-if("eval.overlap.accuracy" %in% names(results)) {
-  ggplot(results, aes(x=meta.recommender.name, y=eval.overlap.accuracy)) +
-    geom_boxplot() +
-    theme_minimal() +
-    labs(title="Accuracy by Recommender", x="Recommender", y="Overlap Accuracy")
-}
-'''
-        
-        with open(output_dir / "analysis_script.R", 'w') as f:
-            f.write(r_script)
     
     def _create_analysis_notebook(self, output_dir: Path):
         """Create a Jupyter notebook template for further analysis."""
@@ -675,7 +640,7 @@ if("eval.overlap.accuracy" %in% names(results)) {
             json.dump(notebook_content, f, indent=2)
     
     def create_publication_visualizations(self, 
-                                         output_dir: str = "publication_figures",
+                                         subdir: str = "visualizations",
                                          save_pdf: bool = True,
                                          save_individual: bool = True,
                                          dpi: int = 300,
@@ -684,7 +649,7 @@ if("eval.overlap.accuracy" %in% names(results)) {
         Create comprehensive publication-ready visualizations.
         
         Args:
-            output_dir: Directory to save figures
+            subdir: Subdirectory within the global output directory to save figures
             save_pdf: Whether to save all figures in a single PDF
             save_individual: Whether to save individual PNG files
             dpi: Resolution for saved figures
@@ -697,7 +662,7 @@ if("eval.overlap.accuracy" %in% names(results)) {
             logger.error("No data loaded. Call load_all_results() first.")
             return {}
         
-        output_path = Path(output_dir)
+        output_path = self.output_dir / subdir
         output_path.mkdir(exist_ok=True)
         
         # Set publication style
@@ -1868,9 +1833,10 @@ if("eval.overlap.accuracy" %in% names(results)) {
 def main():
     """Example usage of the enhanced analyzer with publication visualizations."""
     
-    # Initialize analyzer
+    # Initialize analyzer with global output directory
     analyzer = ExperimentAnalyzer(
         experiment_data_dir="experiment_results",
+        output_dir="results/experiment/experiment_results_analysis/analysis",
         include_tuple_analysis=False
     )
     
@@ -1898,13 +1864,13 @@ def main():
         print("✓ Detailed comparison report created")
         
         # Export for further analysis
-        analyzer.export_for_further_analysis("analysis_exports")
+        analyzer.export_for_further_analysis("exports")
         print("✓ Data exported for further analysis")
         
         # Create publication-ready visualizations
         print("\nCreating publication-ready visualizations...")
         saved_files = analyzer.create_publication_visualizations(
-            output_dir="publication_figures",
+            subdir="visualizations",
             save_pdf=True,
             save_individual=True,
             dpi=300
@@ -1914,12 +1880,13 @@ def main():
             print(f"  - {viz_type}: {filepath}")
         
         print("\n🎉 Complete analysis finished!")
-        print("\nGenerated files:")
-        print("- publication_figures/ (PNG files + combined PDF)")
+        print(f"\nAll files saved to: {analyzer.output_dir}")
+        print("Generated files:")
+        print("- visualizations/ (PNG files + combined PDF)")
         print("- visualization_dashboard.html (overview)")
         print("- dashboard.html (interactive)")
         print("- comparison_report.html (detailed stats)")
-        print("- analysis_exports/ (data + templates)")
+        print("- exports/ (data + templates)")
         
     else:
         print("No experimental results found.")
