@@ -502,9 +502,12 @@ class TimeoutError(Exception):
 
 def main():
     """Main function to run enhanced experiments."""
-    # Setup enhanced experiment runner
+    # Setup enhanced experiment runner with timestamped output directory
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    output_dir = f"results/experiment/experiment_results_{timestamp}"
+    
     runner = RecommenderExperimentRunner(
-        output_dir="experiment_results",
+        output_dir=output_dir,
         enable_full_tuple_storage=True,
         enable_state_tracking=False
     )
