@@ -111,6 +111,7 @@ class EvaluationResult:
     precision: float
     recall: float
     f1_score: float
+    roc_auc: float  # Added ROC-AUC metric
     
     # Set-based metrics
     exact_matches: int

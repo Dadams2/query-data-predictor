@@ -101,6 +101,38 @@ class ExperimentAnalyzer:
                 labels=['Very Low', 'Low', 'Medium', 'High', 'Very High']
             )
         
+        # Create precision bins
+        if 'eval_precision' in df.columns:
+            df['precision_bin'] = pd.cut(
+                df['eval_precision'], 
+                bins=[0, 0.2, 0.4, 0.6, 0.8, 1.0],
+                labels=['Very Low', 'Low', 'Medium', 'High', 'Very High']
+            )
+        
+        # Create recall bins
+        if 'eval_recall' in df.columns:
+            df['recall_bin'] = pd.cut(
+                df['eval_recall'], 
+                bins=[0, 0.2, 0.4, 0.6, 0.8, 1.0],
+                labels=['Very Low', 'Low', 'Medium', 'High', 'Very High']
+            )
+        
+        # Create F1 score bins
+        if 'eval_f1_score' in df.columns:
+            df['f1_bin'] = pd.cut(
+                df['eval_f1_score'], 
+                bins=[0, 0.2, 0.4, 0.6, 0.8, 1.0],
+                labels=['Very Low', 'Low', 'Medium', 'High', 'Very High']
+            )
+        
+        # Create ROC-AUC bins
+        if 'eval_roc_auc' in df.columns:
+            df['roc_auc_bin'] = pd.cut(
+                df['eval_roc_auc'], 
+                bins=[0, 0.5, 0.6, 0.7, 0.8, 1.0],
+                labels=['Poor', 'Fair', 'Good', 'Very Good', 'Excellent']
+            )
+        
         # Create execution time bins
         if 'meta_execution_time_seconds' in df.columns:
             df['execution_time_bin'] = pd.cut(
@@ -128,21 +160,28 @@ class ExperimentAnalyzer:
         
         output_file = self.output_dir / filename
         
-        # Create subplots
+        # Create subplots - expand to include all metrics
         fig = make_subplots(
-            rows=3, cols=2,
+            rows=4, cols=3,
             subplot_titles=[
                 'Accuracy by Recommender',
+                'Precision by Recommender', 
+                'Recall by Recommender',
+                'F1 Score by Recommender',
+                'ROC-AUC by Recommender',
                 'Execution Time Distribution',
                 'Accuracy vs Gap Analysis', 
-                'Performance Heatmap',
+                'Precision vs Gap Analysis',
+                'Performance Heatmap (Accuracy)',
+                'Performance Heatmap (F1)',
                 'Success Rate by Result Size',
                 'Timeline Analysis'
             ],
             specs=[
-                [{"type": "bar"}, {"type": "violin"}],
-                [{"type": "scatter"}, {"type": "heatmap"}],
-                [{"type": "bar"}, {"type": "scatter"}]
+                [{"type": "box"}, {"type": "box"}, {"type": "box"}],
+                [{"type": "box"}, {"type": "box"}, {"type": "violin"}],
+                [{"type": "scatter"}, {"type": "scatter"}, {"type": "heatmap"}],
+                [{"type": "heatmap"}, {"type": "bar"}, {"type": "scatter"}]
             ]
         )
         
@@ -155,16 +194,52 @@ class ExperimentAnalyzer:
                     row=1, col=1
                 )
         
-        # 2. Execution Time Distribution
+        # 2. Precision by Recommender (Box plot)
+        for recommender in self.results_df['meta_recommender_name'].unique():
+            data = self.results_df[self.results_df['meta_recommender_name'] == recommender]
+            if 'eval_precision' in data.columns:
+                fig.add_trace(
+                    go.Box(y=data['eval_precision'], name=recommender),
+                    row=1, col=2
+                )
+        
+        # 3. Recall by Recommender (Box plot)
+        for recommender in self.results_df['meta_recommender_name'].unique():
+            data = self.results_df[self.results_df['meta_recommender_name'] == recommender]
+            if 'eval_recall' in data.columns:
+                fig.add_trace(
+                    go.Box(y=data['eval_recall'], name=recommender),
+                    row=1, col=3
+                )
+        
+        # 4. F1 Score by Recommender (Box plot)
+        for recommender in self.results_df['meta_recommender_name'].unique():
+            data = self.results_df[self.results_df['meta_recommender_name'] == recommender]
+            if 'eval_f1_score' in data.columns:
+                fig.add_trace(
+                    go.Box(y=data['eval_f1_score'], name=recommender),
+                    row=2, col=1
+                )
+        
+        # 5. ROC-AUC by Recommender (Box plot)
+        for recommender in self.results_df['meta_recommender_name'].unique():
+            data = self.results_df[self.results_df['meta_recommender_name'] == recommender]
+            if 'eval_roc_auc' in data.columns:
+                fig.add_trace(
+                    go.Box(y=data['eval_roc_auc'], name=recommender),
+                    row=2, col=2
+                )
+        
+        # 6. Execution Time Distribution
         if 'meta_execution_time_seconds' in self.results_df.columns:
             for recommender in self.results_df['meta_recommender_name'].unique():
                 data = self.results_df[self.results_df['meta_recommender_name'] == recommender]
                 fig.add_trace(
                     go.Violin(y=data['meta_execution_time_seconds'], name=recommender),
-                    row=1, col=2
+                    row=2, col=3
                 )
         
-        # 3. Accuracy vs Gap Analysis
+        # 7. Accuracy vs Gap Analysis
         if 'eval_overlap_accuracy' in self.results_df.columns and 'meta_gap' in self.results_df.columns:
             gap_analysis = self.results_df.groupby(['meta_recommender_name', 'meta_gap'])['eval_overlap_accuracy'].mean().reset_index()
             
@@ -177,11 +252,27 @@ class ExperimentAnalyzer:
                         mode='lines+markers',
                         name=recommender
                     ),
-                    row=2, col=1
+                    row=3, col=1
                 )
         
-        # 4. Performance Heatmap
-        if 'eval_overlap_accuracy' in self.results_df.columns:
+        # 8. Precision vs Gap Analysis
+        if 'eval_precision' in self.results_df.columns and 'meta_gap' in self.results_df.columns:
+            gap_analysis = self.results_df.groupby(['meta_recommender_name', 'meta_gap'])['eval_precision'].mean().reset_index()
+            
+            for recommender in gap_analysis['meta_recommender_name'].unique():
+                data = gap_analysis[gap_analysis['meta_recommender_name'] == recommender]
+                fig.add_trace(
+                    go.Scatter(
+                        x=data['meta_gap'], 
+                        y=data['eval_precision'],
+                        mode='lines+markers',
+                        name=recommender
+                    ),
+                    row=3, col=2
+                )
+        
+        # 9. Performance Heatmap (Accuracy)
+        if 'eval_overlap_accuracy' in self.results_df.columns and 'meta_gap' in self.results_df.columns:
             heatmap_data = self.results_df.groupby(['meta_recommender_name', 'meta_gap'])['eval_overlap_accuracy'].mean().unstack(fill_value=0)
             
             fig.add_trace(
@@ -191,10 +282,24 @@ class ExperimentAnalyzer:
                     y=heatmap_data.index,
                     colorscale='RdYlGn'
                 ),
-                row=2, col=2
+                row=3, col=3
             )
         
-        # 5. Success Rate by Result Size
+        # 10. Performance Heatmap (F1 Score)
+        if 'eval_f1_score' in self.results_df.columns and 'meta_gap' in self.results_df.columns:
+            heatmap_data = self.results_df.groupby(['meta_recommender_name', 'meta_gap'])['eval_f1_score'].mean().unstack(fill_value=0)
+            
+            fig.add_trace(
+                go.Heatmap(
+                    z=heatmap_data.values,
+                    x=heatmap_data.columns,
+                    y=heatmap_data.index,
+                    colorscale='RdYlGn'
+                ),
+                row=4, col=1
+            )
+        
+        # 11. Success Rate by Result Size
         if 'prediction_size_category' in self.results_df.columns:
             success_data = self.results_df.groupby(['meta_recommender_name', 'prediction_size_category']).apply(
                 lambda x: (x['meta_status'] == 'completed').mean()
@@ -205,32 +310,52 @@ class ExperimentAnalyzer:
                 data = success_data[success_data['recommender'] == recommender]
                 fig.add_trace(
                     go.Bar(x=data['size_category'], y=data['success_rate'], name=recommender),
-                    row=3, col=1
+                    row=4, col=2
                 )
         
-        # 6. Timeline Analysis
-        if 'meta_timestamp' in self.results_df.columns and 'eval_overlap_accuracy' in self.results_df.columns:
-            timeline_data = self.results_df.groupby([
-                pd.Grouper(key='meta_timestamp', freq='H'), 
-                'meta_recommender_name'
-            ])['eval_overlap_accuracy'].mean().reset_index()
-            
-            for recommender in timeline_data['meta_recommender_name'].unique():
-                data = timeline_data[timeline_data['meta_recommender_name'] == recommender]
-                fig.add_trace(
-                    go.Scatter(
-                        x=data['meta_timestamp'], 
-                        y=data['eval_overlap_accuracy'],
-                        mode='lines',
-                        name=recommender
-                    ),
-                    row=3, col=2
-                )
+        # 12. Timeline Analysis (Multiple metrics)
+        if 'meta_timestamp' in self.results_df.columns:
+            # Show F1 score over time as it's a good overall metric
+            if 'eval_f1_score' in self.results_df.columns:
+                timeline_data = self.results_df.groupby([
+                    pd.Grouper(key='meta_timestamp', freq='H'), 
+                    'meta_recommender_name'
+                ])['eval_f1_score'].mean().reset_index()
+                
+                for recommender in timeline_data['meta_recommender_name'].unique():
+                    data = timeline_data[timeline_data['meta_recommender_name'] == recommender]
+                    fig.add_trace(
+                        go.Scatter(
+                            x=data['meta_timestamp'], 
+                            y=data['eval_f1_score'],
+                            mode='lines',
+                            name=recommender
+                        ),
+                        row=4, col=3
+                    )
+            elif 'eval_overlap_accuracy' in self.results_df.columns:
+                # Fallback to accuracy if F1 not available
+                timeline_data = self.results_df.groupby([
+                    pd.Grouper(key='meta_timestamp', freq='H'), 
+                    'meta_recommender_name'
+                ])['eval_overlap_accuracy'].mean().reset_index()
+                
+                for recommender in timeline_data['meta_recommender_name'].unique():
+                    data = timeline_data[timeline_data['meta_recommender_name'] == recommender]
+                    fig.add_trace(
+                        go.Scatter(
+                            x=data['meta_timestamp'], 
+                            y=data['eval_overlap_accuracy'],
+                            mode='lines',
+                            name=recommender
+                        ),
+                        row=4, col=3
+                    )
         
         # Update layout
         fig.update_layout(
-            height=1200,
-            title_text="Recommender System Performance Dashboard",
+            height=1600,  # Increased height for more subplots
+            title_text="Comprehensive Recommender System Performance Dashboard",
             showlegend=True
         )
         
@@ -259,15 +384,21 @@ class ExperimentAnalyzer:
             }
         }
         
-        # Performance statistics
-        if 'eval_overlap_accuracy' in self.results_df.columns:
-            perf_stats = self.results_df.groupby('meta_recommender_name').agg({
-                'eval_overlap_accuracy': ['count', 'mean', 'std', 'min', 'max', 'median'],
-                'eval_precision': ['mean', 'std'] if 'eval_precision' in self.results_df.columns else [],
-                'eval_recall': ['mean', 'std'] if 'eval_recall' in self.results_df.columns else [],
-                'eval_f1_score': ['mean', 'std'] if 'eval_f1_score' in self.results_df.columns else [],
-                'meta_execution_time_seconds': ['mean', 'std'] if 'meta_execution_time_seconds' in self.results_df.columns else []
-            }).round(4)
+        # Performance statistics - include all metrics
+        metrics_to_include = {
+            'eval_overlap_accuracy': ['count', 'mean', 'std', 'min', 'max', 'median'],
+            'eval_precision': ['mean', 'std', 'min', 'max', 'median'] if 'eval_precision' in self.results_df.columns else [],
+            'eval_recall': ['mean', 'std', 'min', 'max', 'median'] if 'eval_recall' in self.results_df.columns else [],
+            'eval_f1_score': ['mean', 'std', 'min', 'max', 'median'] if 'eval_f1_score' in self.results_df.columns else [],
+            'eval_roc_auc': ['mean', 'std', 'min', 'max', 'median'] if 'eval_roc_auc' in self.results_df.columns else [],
+            'meta_execution_time_seconds': ['mean', 'std'] if 'meta_execution_time_seconds' in self.results_df.columns else []
+        }
+        
+        # Filter out empty aggregations
+        metrics_to_include = {k: v for k, v in metrics_to_include.items() if v}
+        
+        if metrics_to_include:
+            perf_stats = self.results_df.groupby('meta_recommender_name').agg(metrics_to_include).round(4)
             
             # Convert DataFrame to JSON-serializable format, handling multi-level columns
             perf_stats_dict = {}
@@ -293,46 +424,68 @@ class ExperimentAnalyzer:
         return summary
     
     def _perform_statistical_tests(self) -> Dict[str, Any]:
-        """Perform statistical significance tests between recommenders."""
+        """Perform statistical significance tests between recommenders for all available metrics."""
         
-        if 'eval_overlap_accuracy' not in self.results_df.columns:
-            return {"error": "No accuracy data available"}
+        # Find available metrics to test
+        test_metrics = []
+        metric_names = {
+            'eval_overlap_accuracy': 'Accuracy',
+            'eval_precision': 'Precision', 
+            'eval_recall': 'Recall',
+            'eval_f1_score': 'F1 Score',
+            'eval_roc_auc': 'ROC-AUC'
+        }
         
-        from scipy import stats
+        for metric_col, metric_name in metric_names.items():
+            if metric_col in self.results_df.columns:
+                test_metrics.append((metric_col, metric_name))
         
-        tests = {}
+        if not test_metrics:
+            return {"error": "No metrics available for testing"}
+        
+        try:
+            from scipy import stats
+        except ImportError:
+            return {"error": "scipy not available for statistical tests"}
+        
+        all_tests = {}
         recommenders = self.results_df['meta_recommender_name'].unique()
         
-        # Pairwise t-tests
-        for i, rec1 in enumerate(recommenders):
-            for rec2 in recommenders[i+1:]:
-                data1 = self.results_df[self.results_df['meta_recommender_name'] == rec1]['eval_overlap_accuracy'].dropna()
-                data2 = self.results_df[self.results_df['meta_recommender_name'] == rec2]['eval_overlap_accuracy'].dropna()
-                
-                if len(data1) > 1 and len(data2) > 1:
-                    t_stat, p_value = stats.ttest_ind(data1, data2)
-                    tests[f"{rec1}_vs_{rec2}"] = {
-                        "t_statistic": float(t_stat),
-                        "p_value": float(p_value),
-                        "significant": p_value < 0.05,
-                        "effect_size": float((data1.mean() - data2.mean()) / np.sqrt((data1.var() + data2.var()) / 2))
-                    }
+        for metric_col, metric_name in test_metrics:
+            metric_tests = {}
+            
+            # Pairwise t-tests for this metric
+            for i, rec1 in enumerate(recommenders):
+                for rec2 in recommenders[i+1:]:
+                    data1 = self.results_df[self.results_df['meta_recommender_name'] == rec1][metric_col].dropna()
+                    data2 = self.results_df[self.results_df['meta_recommender_name'] == rec2][metric_col].dropna()
+                    
+                    if len(data1) > 1 and len(data2) > 1:
+                        t_stat, p_value = stats.ttest_ind(data1, data2)
+                        metric_tests[f"{rec1}_vs_{rec2}"] = {
+                            "t_statistic": float(t_stat),
+                            "p_value": float(p_value),
+                            "significant": p_value < 0.05,
+                            "effect_size": float((data1.mean() - data2.mean()) / np.sqrt((data1.var() + data2.var()) / 2))
+                        }
+            
+            # ANOVA test for this metric
+            groups = [
+                self.results_df[self.results_df['meta_recommender_name'] == rec][metric_col].dropna()
+                for rec in recommenders
+            ]
+            
+            if all(len(group) > 1 for group in groups):
+                f_stat, p_value = stats.f_oneway(*groups)
+                metric_tests["anova"] = {
+                    "f_statistic": float(f_stat),
+                    "p_value": float(p_value),
+                    "significant": p_value < 0.05
+                }
+            
+            all_tests[metric_name] = metric_tests
         
-        # ANOVA test
-        groups = [
-            self.results_df[self.results_df['meta_recommender_name'] == rec]['eval_overlap_accuracy'].dropna()
-            for rec in recommenders
-        ]
-        
-        if all(len(group) > 1 for group in groups):
-            f_stat, p_value = stats.f_oneway(*groups)
-            tests["anova"] = {
-                "f_statistic": float(f_stat),
-                "p_value": float(p_value),
-                "significant": p_value < 0.05
-            }
-        
-        return tests
+        return all_tests
     
     def _analyze_correlations(self) -> Dict[str, Any]:
         """Analyze correlations between different metrics."""
@@ -462,27 +615,43 @@ class ExperimentAnalyzer:
                         <th>Recommender</th>
                         <th>Experiments</th>
                         <th>Mean Accuracy</th>
-                        <th>Std Accuracy</th>
-                        <th>Min Accuracy</th>
-                        <th>Max Accuracy</th>
-                        <th>Median Accuracy</th>
+                        <th>Mean Precision</th>
+                        <th>Mean Recall</th>
+                        <th>Mean F1 Score</th>
+                        <th>Mean ROC-AUC</th>
+                        <th>Execution Time (s)</th>
                     </tr>
             """
             
             perf_stats = stats_summary['performance_statistics']
-            if 'eval_overlap_accuracy' in perf_stats:
-                for recommender, stats in perf_stats['eval_overlap_accuracy'].items():
-                    html += f"""
-                    <tr>
-                        <td>{recommender}</td>
-                        <td class="number">{stats.get('count', 'N/A')}</td>
-                        <td class="number">{stats.get('mean', 'N/A'):.4f}</td>
-                        <td class="number">{stats.get('std', 'N/A'):.4f}</td>
-                        <td class="number">{stats.get('min', 'N/A'):.4f}</td>
-                        <td class="number">{stats.get('max', 'N/A'):.4f}</td>
-                        <td class="number">{stats.get('median', 'N/A'):.4f}</td>
-                    </tr>
-                    """
+            
+            # Get list of recommenders
+            recommenders = set()
+            for metric_stats in perf_stats.values():
+                if isinstance(metric_stats, dict):
+                    recommenders.update(metric_stats.keys())
+            
+            for recommender in recommenders:
+                accuracy = perf_stats.get('eval_overlap_accuracy_mean', {}).get(recommender, 'N/A')
+                precision = perf_stats.get('eval_precision_mean', {}).get(recommender, 'N/A')
+                recall = perf_stats.get('eval_recall_mean', {}).get(recommender, 'N/A')
+                f1_score = perf_stats.get('eval_f1_score_mean', {}).get(recommender, 'N/A')
+                roc_auc = perf_stats.get('eval_roc_auc_mean', {}).get(recommender, 'N/A')
+                exec_time = perf_stats.get('meta_execution_time_seconds_mean', {}).get(recommender, 'N/A')
+                count = perf_stats.get('eval_overlap_accuracy_count', {}).get(recommender, 'N/A')
+                
+                html += f"""
+                <tr>
+                    <td>{recommender}</td>
+                    <td class="number">{count}</td>
+                    <td class="number">{accuracy:.4f if isinstance(accuracy, (int, float)) else accuracy}</td>
+                    <td class="number">{precision:.4f if isinstance(precision, (int, float)) else precision}</td>
+                    <td class="number">{recall:.4f if isinstance(recall, (int, float)) else recall}</td>
+                    <td class="number">{f1_score:.4f if isinstance(f1_score, (int, float)) else f1_score}</td>
+                    <td class="number">{roc_auc:.4f if isinstance(roc_auc, (int, float)) else roc_auc}</td>
+                    <td class="number">{exec_time:.4f if isinstance(exec_time, (int, float)) else exec_time}</td>
+                </tr>
+                """
             
             html += "</table></div>"
         
@@ -672,8 +841,13 @@ class ExperimentAnalyzer:
         
         # Create individual visualizations
         viz_methods = [
+            ("comprehensive_metrics_comparison", self._create_comprehensive_metrics_comparison),
             ("accuracy_comparison", self._create_accuracy_comparison),
             ("gap_analysis", self._create_gap_analysis),
+            ("precision_gap_analysis", self._create_precision_gap_analysis),
+            ("recall_gap_analysis", self._create_recall_gap_analysis),
+            ("f1_gap_analysis", self._create_f1_gap_analysis),
+            ("roc_auc_gap_analysis", self._create_roc_auc_gap_analysis),
             ("result_size_analysis", self._create_result_size_analysis),
             ("execution_time_analysis", self._create_execution_time_analysis),
             ("performance_heatmap", self._create_performance_heatmap),
@@ -760,131 +934,175 @@ class ExperimentAnalyzer:
         })
     
     def _create_accuracy_comparison(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
-        """Create publication-ready accuracy comparison visualization."""
-        if 'eval_overlap_accuracy' not in self.results_df.columns:
+        """Create publication-ready comprehensive metrics comparison visualization."""
+        
+        # Check which metrics are available
+        available_metrics = []
+        metric_names = {
+            'eval_overlap_accuracy': 'Accuracy',
+            'eval_precision': 'Precision', 
+            'eval_recall': 'Recall',
+            'eval_f1_score': 'F1 Score',
+            'eval_roc_auc': 'ROC-AUC'
+        }
+        
+        for metric_col, metric_name in metric_names.items():
+            if metric_col in self.results_df.columns:
+                available_metrics.append((metric_col, metric_name))
+        
+        if not available_metrics:
             return None
         
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=figsize)
-        fig.suptitle('Recommender System Accuracy Analysis', fontsize=16, fontweight='bold')
+        # Determine grid size based on available metrics
+        n_metrics = len(available_metrics)
+        if n_metrics <= 2:
+            rows, cols = 1, n_metrics
+        elif n_metrics <= 4:
+            rows, cols = 2, 2
+        else:
+            rows, cols = 2, 3
         
-        # 1. Box plot comparison
-        sns.boxplot(data=self.results_df, x='meta_recommender_name', 
-                   y='eval_overlap_accuracy', ax=ax1)
-        ax1.set_title('A) Accuracy Distribution by Recommender')
-        ax1.set_xlabel('Recommender System')
-        ax1.set_ylabel('Overlap Accuracy')
-        ax1.tick_params(axis='x', rotation=45)
+        fig, axes = plt.subplots(rows, cols, figsize=(cols * 6, rows * 5))
+        fig.suptitle('Comprehensive Performance Metrics Comparison', fontsize=16, fontweight='bold')
         
-        # Add statistical annotations
-        self._add_statistical_annotations(ax1, 'meta_recommender_name', 'eval_overlap_accuracy')
+        # Handle single subplot case
+        if n_metrics == 1:
+            axes = [axes]
+        elif rows == 1:
+            axes = axes if isinstance(axes, list) else [axes]
+        else:
+            axes = axes.flatten()
         
-        # 2. Violin plot with quartiles
-        sns.violinplot(data=self.results_df, x='meta_recommender_name', 
-                      y='eval_overlap_accuracy', ax=ax2, inner='quartile')
-        ax2.set_title('B) Accuracy Distribution with Quartiles')
-        ax2.set_xlabel('Recommender System')
-        ax2.set_ylabel('Overlap Accuracy')
-        ax2.tick_params(axis='x', rotation=45)
+        # Create box plots for each available metric
+        for idx, (metric_col, metric_name) in enumerate(available_metrics):
+            ax = axes[idx]
+            
+            # Box plot comparison
+            sns.boxplot(data=self.results_df, x='meta_recommender_name', 
+                       y=metric_col, ax=ax)
+            ax.set_title(f'{chr(65 + idx)}) {metric_name} Distribution by Recommender')
+            ax.set_xlabel('Recommender System')
+            ax.set_ylabel(metric_name)
+            ax.tick_params(axis='x', rotation=45)
+            
+            # Add statistical annotations
+            self._add_statistical_annotations(ax, 'meta_recommender_name', metric_col)
+            
+            # Add mean values as text annotations
+            means = self.results_df.groupby('meta_recommender_name')[metric_col].mean()
+            for i, (recommender, mean_val) in enumerate(means.items()):
+                ax.text(i, ax.get_ylim()[1] * 0.95, f'μ={mean_val:.3f}', 
+                       ha='center', va='top', fontweight='bold', fontsize=9)
         
-        # 3. Mean accuracy with confidence intervals
-        accuracy_stats = self.results_df.groupby('meta_recommender_name')['eval_overlap_accuracy'].agg([
-            'mean', 'std', 'count'
-        ]).reset_index()
-        
-        # Calculate 95% confidence intervals
-        from scipy import stats
-        accuracy_stats['ci'] = accuracy_stats.apply(
-            lambda row: stats.t.interval(0.95, row['count']-1, 
-                                       loc=row['mean'], 
-                                       scale=row['std']/np.sqrt(row['count']))[1] - row['mean']
-            if row['count'] > 1 else 0, axis=1
-        )
-        
-        bars = ax3.bar(accuracy_stats['meta_recommender_name'], accuracy_stats['mean'],
-                       yerr=accuracy_stats['ci'], capsize=5, alpha=0.8)
-        ax3.set_title('C) Mean Accuracy with 95% Confidence Intervals')
-        ax3.set_xlabel('Recommender System')
-        ax3.set_ylabel('Mean Overlap Accuracy')
-        ax3.tick_params(axis='x', rotation=45)
-        
-        # Add value labels on bars
-        for bar, mean_val, ci_val in zip(bars, accuracy_stats['mean'], accuracy_stats['ci']):
-            height = bar.get_height()
-            ax3.text(bar.get_x() + bar.get_width()/2., height + ci_val + 0.01,
-                    f'{mean_val:.3f}', ha='center', va='bottom', fontsize=9)
-        
-        # 4. Cumulative distribution
-        for recommender in self.results_df['meta_recommender_name'].unique():
-            data = self.results_df[self.results_df['meta_recommender_name'] == recommender]['eval_overlap_accuracy']
-            sorted_data = np.sort(data.dropna())
-            cumulative = np.arange(1, len(sorted_data) + 1) / len(sorted_data)
-            ax4.plot(sorted_data, cumulative, label=recommender, linewidth=2)
-        
-        ax4.set_title('D) Cumulative Distribution Function')
-        ax4.set_xlabel('Overlap Accuracy')
-        ax4.set_ylabel('Cumulative Probability')
-        ax4.legend()
-        ax4.grid(True, alpha=0.3)
+        # Hide unused subplots
+        for idx in range(n_metrics, len(axes)):
+            axes[idx].set_visible(False)
         
         plt.tight_layout()
         return fig
     
     def _create_gap_analysis(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
-        """Create publication-ready gap analysis visualization."""
-        if 'meta_gap' not in self.results_df.columns or 'eval_overlap_accuracy' not in self.results_df.columns:
+        """Create publication-ready gap analysis visualization with multiple metrics."""
+        if 'meta_gap' not in self.results_df.columns:
+            return None
+        
+        # Find available metrics
+        available_metrics = []
+        metric_names = {
+            'eval_overlap_accuracy': 'Accuracy',
+            'eval_precision': 'Precision', 
+            'eval_recall': 'Recall',
+            'eval_f1_score': 'F1 Score',
+            'eval_roc_auc': 'ROC-AUC'
+        }
+        
+        for metric_col, metric_name in metric_names.items():
+            if metric_col in self.results_df.columns:
+                available_metrics.append((metric_col, metric_name))
+        
+        if not available_metrics:
             return None
         
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=figsize)
-        fig.suptitle('Query Gap Impact Analysis', fontsize=16, fontweight='bold')
+        fig.suptitle('Query Gap Impact Analysis - Multiple Metrics', fontsize=16, fontweight='bold')
         
-        # 1. Line plot of accuracy vs gap
-        gap_analysis = self.results_df.groupby(['meta_recommender_name', 'meta_gap']).agg({
-            'eval_overlap_accuracy': ['mean', 'std', 'count']
-        }).reset_index()
-        gap_analysis.columns = ['recommender', 'gap', 'mean_acc', 'std_acc', 'count']
+        # 1. Line plot - First available metric vs gap
+        if available_metrics:
+            metric_col, metric_name = available_metrics[0]
+            gap_analysis = self.results_df.groupby(['meta_recommender_name', 'meta_gap']).agg({
+                metric_col: ['mean', 'std', 'count']
+            }).reset_index()
+            gap_analysis.columns = ['recommender', 'gap', 'mean_metric', 'std_metric', 'count']
+            
+            for recommender in gap_analysis['recommender'].unique():
+                data = gap_analysis[gap_analysis['recommender'] == recommender]
+                ax1.errorbar(data['gap'], data['mean_metric'], yerr=data['std_metric'], 
+                            label=recommender, marker='o', linewidth=2, markersize=6)
+            
+            ax1.set_title(f'A) {metric_name} vs Query Gap')
+            ax1.set_xlabel('Query Gap')
+            ax1.set_ylabel('Mean {metric_name}')
+            ax1.legend()
+            ax1.grid(True, alpha=0.3)
         
-        for recommender in gap_analysis['recommender'].unique():
-            data = gap_analysis[gap_analysis['recommender'] == recommender]
-            ax1.errorbar(data['gap'], data['mean_acc'], yerr=data['std_acc'], 
-                        label=recommender, marker='o', linewidth=2, markersize=6)
+        # 2. Heatmap of primary metric by recommender and gap
+        if available_metrics:
+            metric_col, metric_name = available_metrics[0]
+            heatmap_data = self.results_df.pivot_table(
+                values=metric_col, 
+                index='meta_recommender_name', 
+                columns='meta_gap', 
+                aggfunc='mean'
+            )
+            
+            sns.heatmap(heatmap_data, annot=True, fmt='.3f', cmap='RdYlGn', 
+                       ax=ax2, cbar_kws={'label': f'Mean {metric_name}'})
+            ax2.set_title(f'B) {metric_name} Heatmap (Recommender × Gap)')
+            ax2.set_xlabel('Query Gap')
+            ax2.set_ylabel('Recommender System')
         
-        ax1.set_title('A) Accuracy vs Query Gap')
-        ax1.set_xlabel('Query Gap')
-        ax1.set_ylabel('Mean Overlap Accuracy')
-        ax1.legend()
-        ax1.grid(True, alpha=0.3)
+        # 3. Multi-metric comparison for first gap value
+        if len(available_metrics) > 1:
+            first_gap = sorted(self.results_df['meta_gap'].unique())[0]
+            gap_data = self.results_df[self.results_df['meta_gap'] == first_gap]
+            
+            # Create a DataFrame for plotting multiple metrics
+            plot_data = []
+            for metric_col, metric_name in available_metrics:
+                for recommender in gap_data['meta_recommender_name'].unique():
+                    rec_data = gap_data[gap_data['meta_recommender_name'] == recommender]
+                    if len(rec_data) > 0:
+                        plot_data.append({
+                            'Recommender': recommender,
+                            'Metric': metric_name,
+                            'Value': rec_data[metric_col].mean()
+                        })
+            
+            if plot_data:
+                plot_df = pd.DataFrame(plot_data)
+                pivot_df = plot_df.pivot(index='Recommender', columns='Metric', values='Value')
+                
+                pivot_df.plot(kind='bar', ax=ax3, width=0.8)
+                ax3.set_title(f'C) Multi-Metric Comparison (Gap = {first_gap})')
+                ax3.set_xlabel('Recommender System')
+                ax3.set_ylabel('Metric Value')
+                ax3.legend(title='Metrics', bbox_to_anchor=(1.05, 1), loc='upper left')
+                ax3.tick_params(axis='x', rotation=45)
         
-        # 2. Heatmap of accuracy by recommender and gap
-        heatmap_data = self.results_df.pivot_table(
-            values='eval_overlap_accuracy', 
-            index='meta_recommender_name', 
-            columns='meta_gap', 
-            aggfunc='mean'
-        )
+        # 4. Gap effect size analysis for F1 score (or first available metric)
+        effect_metric = 'eval_f1_score' if 'eval_f1_score' in self.results_df.columns else available_metrics[0][0]
+        effect_metric_name = metric_names.get(effect_metric, effect_metric)
         
-        sns.heatmap(heatmap_data, annot=True, fmt='.3f', cmap='RdYlGn', 
-                   ax=ax2, cbar_kws={'label': 'Mean Accuracy'})
-        ax2.set_title('B) Accuracy Heatmap (Recommender × Gap)')
-        ax2.set_xlabel('Query Gap')
-        ax2.set_ylabel('Recommender System')
-        
-        # 3. Box plots by gap
-        sns.boxplot(data=self.results_df, x='meta_gap', y='eval_overlap_accuracy', 
-                   hue='meta_recommender_name', ax=ax3)
-        ax3.set_title('C) Accuracy Distribution by Gap')
-        ax3.set_xlabel('Query Gap')
-        ax3.set_ylabel('Overlap Accuracy')
-        ax3.legend(title='Recommender', bbox_to_anchor=(1.05, 1), loc='upper left')
-        
-        # 4. Gap effect size analysis
         gap_effects = []
         for recommender in self.results_df['meta_recommender_name'].unique():
             rec_data = self.results_df[self.results_df['meta_recommender_name'] == recommender]
+            baseline_gap = rec_data['meta_gap'].min()
+            baseline_data = rec_data[rec_data['meta_gap'] == baseline_gap][effect_metric]
+            
             for gap in sorted(rec_data['meta_gap'].unique()):
-                gap_data = rec_data[rec_data['meta_gap'] == gap]['eval_overlap_accuracy']
-                baseline_data = rec_data[rec_data['meta_gap'] == rec_data['meta_gap'].min()]['eval_overlap_accuracy']
+                gap_data = rec_data[rec_data['meta_gap'] == gap][effect_metric]
                 
-                if len(gap_data) > 0 and len(baseline_data) > 0:
+                if len(gap_data) > 0 and len(baseline_data) > 0 and baseline_data.std() > 0:
                     effect_size = (gap_data.mean() - baseline_data.mean()) / baseline_data.std()
                     gap_effects.append({
                         'recommender': recommender,
@@ -898,267 +1116,388 @@ class ExperimentAnalyzer:
             
             sns.heatmap(effect_pivot, annot=True, fmt='.2f', cmap='RdBu_r', center=0,
                        ax=ax4, cbar_kws={'label': 'Effect Size'})
-            ax4.set_title('D) Gap Effect Size (vs Baseline)')
+            ax4.set_title(f'D) Gap Effect Size for {effect_metric_name} (vs Baseline)')
             ax4.set_xlabel('Query Gap')
             ax4.set_ylabel('Recommender System')
+        else:
+            ax4.text(0.5, 0.5, f'Insufficient data for\n{effect_metric_name} effect size analysis', 
+                    ha='center', va='center', transform=ax4.transAxes, 
+                    fontsize=12, bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray"))
+            ax4.set_title(f'D) Gap Effect Size for {effect_metric_name}')
+        
+        plt.tight_layout()
+        return fig
+    
+    def _create_precision_gap_analysis(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
+        """Create publication-ready precision gap analysis visualization."""
+        return self._create_metric_gap_analysis('eval_precision', 'Precision', figsize)
+    
+    def _create_recall_gap_analysis(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
+        """Create publication-ready recall gap analysis visualization."""
+        return self._create_metric_gap_analysis('eval_recall', 'Recall', figsize)
+    
+    def _create_f1_gap_analysis(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
+        """Create publication-ready F1 score gap analysis visualization."""
+        return self._create_metric_gap_analysis('eval_f1_score', 'F1 Score', figsize)
+    
+    def _create_roc_auc_gap_analysis(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
+        """Create publication-ready ROC-AUC gap analysis visualization."""
+        return self._create_metric_gap_analysis('eval_roc_auc', 'ROC-AUC', figsize)
+    
+    def _create_metric_gap_analysis(self, metric_col: str, metric_name: str, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
+        """Create publication-ready gap analysis visualization for a specific metric."""
+        if 'meta_gap' not in self.results_df.columns or metric_col not in self.results_df.columns:
+            return None
+        
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=figsize)
+        fig.suptitle(f'{metric_name} vs Query Gap Analysis', fontsize=16, fontweight='bold')
+        
+        # 1. Line plot of metric vs gap
+        gap_analysis = self.results_df.groupby(['meta_recommender_name', 'meta_gap']).agg({
+            metric_col: ['mean', 'std', 'count']
+        }).reset_index()
+        gap_analysis.columns = ['recommender', 'gap', 'mean_metric', 'std_metric', 'count']
+        
+        for recommender in gap_analysis['recommender'].unique():
+            data = gap_analysis[gap_analysis['recommender'] == recommender]
+            ax1.errorbar(data['gap'], data['mean_metric'], yerr=data['std_metric'], 
+                        label=recommender, marker='o', linewidth=2, markersize=6)
+        
+        ax1.set_title(f'A) {metric_name} vs Query Gap')
+        ax1.set_xlabel('Query Gap')
+        ax1.set_ylabel(f'Mean {metric_name}')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+        
+        # 2. Heatmap of metric by recommender and gap
+        heatmap_data = self.results_df.pivot_table(
+            values=metric_col, 
+            index='meta_recommender_name', 
+            columns='meta_gap', 
+            aggfunc='mean'
+        )
+        
+        sns.heatmap(heatmap_data, annot=True, fmt='.3f', cmap='RdYlGn', 
+                   ax=ax2, cbar_kws={'label': f'Mean {metric_name}'})
+        ax2.set_title(f'B) {metric_name} Heatmap (Recommender × Gap)')
+        ax2.set_xlabel('Query Gap')
+        ax2.set_ylabel('Recommender System')
+        
+        # 3. Box plots by gap
+        sns.boxplot(data=self.results_df, x='meta_gap', y=metric_col, 
+                   hue='meta_recommender_name', ax=ax3)
+        ax3.set_title(f'C) {metric_name} Distribution by Gap')
+        ax3.set_xlabel('Query Gap')
+        ax3.set_ylabel(metric_name)
+        ax3.legend(title='Recommender', bbox_to_anchor=(1.05, 1), loc='upper left')
+        
+        # 4. Gap effect size analysis
+        gap_effects = []
+        for recommender in self.results_df['meta_recommender_name'].unique():
+            rec_data = self.results_df[self.results_df['meta_recommender_name'] == recommender]
+            baseline_gap = rec_data['meta_gap'].min()
+            baseline_data = rec_data[rec_data['meta_gap'] == baseline_gap][metric_col]
+            
+            for gap in sorted(rec_data['meta_gap'].unique()):
+                gap_data = rec_data[rec_data['meta_gap'] == gap][metric_col]
+                
+                if len(gap_data) > 0 and len(baseline_data) > 0 and baseline_data.std() > 0:
+                    effect_size = (gap_data.mean() - baseline_data.mean()) / baseline_data.std()
+                    gap_effects.append({
+                        'recommender': recommender,
+                        'gap': gap,
+                        'effect_size': effect_size
+                    })
+        
+        if gap_effects:
+            effect_df = pd.DataFrame(gap_effects)
+            effect_pivot = effect_df.pivot(index='recommender', columns='gap', values='effect_size')
+            
+            sns.heatmap(effect_pivot, annot=True, fmt='.2f', cmap='RdBu_r', center=0,
+                       ax=ax4, cbar_kws={'label': 'Effect Size'})
+            ax4.set_title(f'D) Gap Effect Size for {metric_name} (vs Baseline)')
+            ax4.set_xlabel('Query Gap')
+            ax4.set_ylabel('Recommender System')
+        else:
+            ax4.text(0.5, 0.5, f'Insufficient data for\n{metric_name} effect size analysis', 
+                    ha='center', va='center', transform=ax4.transAxes, 
+                    fontsize=12, bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray"))
+            ax4.set_title(f'D) Gap Effect Size for {metric_name}')
         
         plt.tight_layout()
         return fig
     
     def _create_result_size_analysis(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
-        """Create publication-ready result size impact analysis."""
+        """Create publication-ready result size analysis visualization."""
         if 'rec_predicted_count' not in self.results_df.columns:
             return None
         
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=figsize)
-        fig.suptitle('Result Set Size Impact Analysis', fontsize=16, fontweight='bold')
+        fig.suptitle('Result Size Analysis', fontsize=16, fontweight='bold')
         
-        # Create size bins if not already present
-        if 'prediction_size_category' not in self.results_df.columns:
-            self.results_df['prediction_size_category'] = pd.cut(
-                self.results_df['rec_predicted_count'],
-                bins=[0, 10, 50, 100, 500, float('inf')],
-                labels=['Tiny', 'Small', 'Medium', 'Large', 'Huge']
-            )
+        # 1. Distribution of prediction counts by recommender
+        sns.boxplot(data=self.results_df, x='meta_recommender_name', y='rec_predicted_count', ax=ax1)
+        ax1.set_title('A) Prediction Count Distribution by Recommender')
+        ax1.set_xlabel('Recommender System')
+        ax1.set_ylabel('Number of Predicted Tuples')
+        ax1.tick_params(axis='x', rotation=45)
         
-        # 1. Accuracy by result size category
+        # 2. Result size vs accuracy
         if 'eval_overlap_accuracy' in self.results_df.columns:
-            sns.boxplot(data=self.results_df, x='prediction_size_category', 
-                       y='eval_overlap_accuracy', ax=ax1)
-            ax1.set_title('A) Accuracy by Result Size Category')
-            ax1.set_xlabel('Predicted Result Size Category')
-            ax1.set_ylabel('Overlap Accuracy')
-        
-        # 2. Scatter plot of accuracy vs result size
-        if 'eval_overlap_accuracy' in self.results_df.columns:
-            for recommender in self.results_df['meta_recommender_name'].unique():
-                data = self.results_df[self.results_df['meta_recommender_name'] == recommender]
-                ax2.scatter(data['rec_predicted_count'], data['eval_overlap_accuracy'], 
-                           label=recommender, alpha=0.6, s=30)
-            
-            ax2.set_title('B) Accuracy vs Predicted Result Count')
-            ax2.set_xlabel('Predicted Result Count')
+            sns.scatterplot(data=self.results_df, x='rec_predicted_count', y='eval_overlap_accuracy', 
+                           hue='meta_recommender_name', ax=ax2, alpha=0.7)
+            ax2.set_title('B) Accuracy vs Prediction Count')
+            ax2.set_xlabel('Number of Predicted Tuples')
             ax2.set_ylabel('Overlap Accuracy')
-            ax2.set_xscale('log')
-            ax2.legend()
-            ax2.grid(True, alpha=0.3)
+            ax2.legend(title='Recommender', bbox_to_anchor=(1.05, 1), loc='upper left')
+        else:
+            ax2.text(0.5, 0.5, 'Accuracy data not available', ha='center', va='center', 
+                    transform=ax2.transAxes, fontsize=12)
+            ax2.set_title('B) Accuracy vs Prediction Count')
         
-        # 3. Result size distribution by recommender
-        sns.violinplot(data=self.results_df, x='meta_recommender_name', 
-                      y='rec_predicted_count', ax=ax3)
-        ax3.set_title('C) Predicted Result Size Distribution')
-        ax3.set_xlabel('Recommender System')
-        ax3.set_ylabel('Predicted Result Count')
-        ax3.set_yscale('log')
-        ax3.tick_params(axis='x', rotation=45)
-        
-        # 4. Success rate by size category
-        if 'meta_status' in self.results_df.columns:
-            success_data = self.results_df.groupby(['meta_recommender_name', 'prediction_size_category']).apply(
-                lambda x: (x['meta_status'] == 'completed').mean()
-            ).reset_index()
-            success_data.columns = ['recommender', 'size_category', 'success_rate']
+        # 3. Average result size by gap
+        if 'meta_gap' in self.results_df.columns:
+            gap_analysis = self.results_df.groupby(['meta_recommender_name', 'meta_gap']).agg({
+                'rec_predicted_count': 'mean'
+            }).reset_index()
             
-            success_pivot = success_data.pivot(index='recommender', columns='size_category', values='success_rate')
-            sns.heatmap(success_pivot, annot=True, fmt='.2f', cmap='RdYlGn', 
-                       ax=ax4, cbar_kws={'label': 'Success Rate'})
-            ax4.set_title('D) Success Rate by Size Category')
-            ax4.set_xlabel('Result Size Category')
-            ax4.set_ylabel('Recommender System')
+            for recommender in gap_analysis['meta_recommender_name'].unique():
+                data = gap_analysis[gap_analysis['meta_recommender_name'] == recommender]
+                ax3.plot(data['meta_gap'], data['rec_predicted_count'], marker='o', 
+                        label=recommender, linewidth=2, markersize=6)
+            
+            ax3.set_title('C) Average Prediction Count vs Query Gap')
+            ax3.set_xlabel('Query Gap')
+            ax3.set_ylabel('Average Predicted Tuples')
+            ax3.legend()
+            ax3.grid(True, alpha=0.3)
+        else:
+            ax3.text(0.5, 0.5, 'Gap data not available', ha='center', va='center', 
+                    transform=ax3.transAxes, fontsize=12)
+            ax3.set_title('C) Average Prediction Count vs Query Gap')
+        
+        # 4. Result size efficiency (accuracy per predicted tuple)
+        if 'eval_overlap_accuracy' in self.results_df.columns:
+            # Calculate efficiency metric
+            efficiency = self.results_df['eval_overlap_accuracy'] / (self.results_df['rec_predicted_count'] + 1e-6)
+            efficiency_df = pd.DataFrame({
+                'recommender': self.results_df['meta_recommender_name'],
+                'efficiency': efficiency
+            })
+            
+            sns.boxplot(data=efficiency_df, x='recommender', y='efficiency', ax=ax4)
+            ax4.set_title('D) Prediction Efficiency (Accuracy/Count)')
+            ax4.set_xlabel('Recommender System')
+            ax4.set_ylabel('Efficiency Score')
+            ax4.tick_params(axis='x', rotation=45)
+        else:
+            ax4.text(0.5, 0.5, 'Efficiency calculation not available', ha='center', va='center', 
+                    transform=ax4.transAxes, fontsize=12)
+            ax4.set_title('D) Prediction Efficiency')
         
         plt.tight_layout()
         return fig
     
     def _create_execution_time_analysis(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
-        """Create publication-ready execution time analysis."""
-        if 'meta_execution_time_seconds' not in self.results_df.columns:
+        """Create publication-ready execution time analysis visualization."""
+        time_columns = [col for col in self.results_df.columns if 'time' in col.lower() or 'duration' in col.lower()]
+        
+        if not time_columns:
             return None
         
+        # Use the first available time column
+        time_col = time_columns[0]
+        
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=figsize)
-        fig.suptitle('Execution Time Performance Analysis', fontsize=16, fontweight='bold')
+        fig.suptitle('Execution Time Analysis', fontsize=16, fontweight='bold')
         
         # 1. Execution time distribution by recommender
-        sns.boxplot(data=self.results_df, x='meta_recommender_name', 
-                   y='meta_execution_time_seconds', ax=ax1)
-        ax1.set_title('A) Execution Time Distribution')
+        sns.boxplot(data=self.results_df, x='meta_recommender_name', y=time_col, ax=ax1)
+        ax1.set_title('A) Execution Time Distribution by Recommender')
         ax1.set_xlabel('Recommender System')
-        ax1.set_ylabel('Execution Time (seconds)')
-        ax1.set_yscale('log')
+        ax1.set_ylabel('Execution Time')
         ax1.tick_params(axis='x', rotation=45)
         
-        # 2. Time vs result size
+        # 2. Time vs data size (if available)
         if 'rec_predicted_count' in self.results_df.columns:
-            for recommender in self.results_df['meta_recommender_name'].unique():
-                data = self.results_df[self.results_df['meta_recommender_name'] == recommender]
-                ax2.scatter(data['rec_predicted_count'], data['meta_execution_time_seconds'], 
-                           label=recommender, alpha=0.6, s=30)
-            
+            sns.scatterplot(data=self.results_df, x='rec_predicted_count', y=time_col, 
+                           hue='meta_recommender_name', ax=ax2, alpha=0.7)
             ax2.set_title('B) Execution Time vs Result Size')
-            ax2.set_xlabel('Predicted Result Count')
-            ax2.set_ylabel('Execution Time (seconds)')
-            ax2.set_xscale('log')
-            ax2.set_yscale('log')
-            ax2.legend()
-            ax2.grid(True, alpha=0.3)
+            ax2.set_xlabel('Number of Predicted Tuples')
+            ax2.set_ylabel('Execution Time')
+            ax2.legend(title='Recommender', bbox_to_anchor=(1.05, 1), loc='upper left')
+        else:
+            ax2.text(0.5, 0.5, 'Result size data not available', ha='center', va='center', 
+                    transform=ax2.transAxes, fontsize=12)
+            ax2.set_title('B) Execution Time vs Result Size')
         
-        # 3. Efficiency analysis (accuracy per second)
-        if 'eval_overlap_accuracy' in self.results_df.columns:
-            self.results_df['efficiency'] = self.results_df['eval_overlap_accuracy'] / self.results_df['meta_execution_time_seconds']
+        # 3. Time vs gap (if available)
+        if 'meta_gap' in self.results_df.columns:
+            gap_time = self.results_df.groupby(['meta_recommender_name', 'meta_gap']).agg({
+                time_col: 'mean'
+            }).reset_index()
             
-            sns.boxplot(data=self.results_df, x='meta_recommender_name', 
-                       y='efficiency', ax=ax3)
-            ax3.set_title('C) Efficiency (Accuracy per Second)')
-            ax3.set_xlabel('Recommender System')
-            ax3.set_ylabel('Accuracy / Execution Time')
-            ax3.tick_params(axis='x', rotation=45)
+            for recommender in gap_time['meta_recommender_name'].unique():
+                data = gap_time[gap_time['meta_recommender_name'] == recommender]
+                ax3.plot(data['meta_gap'], data[time_col], marker='o', 
+                        label=recommender, linewidth=2, markersize=6)
+            
+            ax3.set_title('C) Average Execution Time vs Query Gap')
+            ax3.set_xlabel('Query Gap')
+            ax3.set_ylabel('Average Execution Time')
+            ax3.legend()
+            ax3.grid(True, alpha=0.3)
+        else:
+            ax3.text(0.5, 0.5, 'Gap data not available', ha='center', va='center', 
+                    transform=ax3.transAxes, fontsize=12)
+            ax3.set_title('C) Average Execution Time vs Query Gap')
         
-        # 4. Time distribution histogram
-        colors = plt.cm.Set3(np.linspace(0, 1, len(self.results_df['meta_recommender_name'].unique())))
-        for i, recommender in enumerate(self.results_df['meta_recommender_name'].unique()):
-            data = self.results_df[self.results_df['meta_recommender_name'] == recommender]['meta_execution_time_seconds']
-            ax4.hist(data, bins=20, alpha=0.7, label=recommender, color=colors[i], density=True)
-        
-        ax4.set_title('D) Execution Time Distribution')
-        ax4.set_xlabel('Execution Time (seconds)')
-        ax4.set_ylabel('Density')
-        ax4.set_xscale('log')
-        ax4.legend()
-        ax4.grid(True, alpha=0.3)
+        # 4. Performance efficiency (accuracy per time)
+        if 'eval_overlap_accuracy' in self.results_df.columns:
+            efficiency = self.results_df['eval_overlap_accuracy'] / (self.results_df[time_col] + 1e-6)
+            efficiency_df = pd.DataFrame({
+                'recommender': self.results_df['meta_recommender_name'],
+                'time_efficiency': efficiency
+            })
+            
+            sns.boxplot(data=efficiency_df, x='recommender', y='time_efficiency', ax=ax4)
+            ax4.set_title('D) Time Efficiency (Accuracy/Time)')
+            ax4.set_xlabel('Recommender System')
+            ax4.set_ylabel('Time Efficiency Score')
+            ax4.tick_params(axis='x', rotation=45)
+        else:
+            ax4.text(0.5, 0.5, 'Time efficiency calculation not available', ha='center', va='center', 
+                    transform=ax4.transAxes, fontsize=12)
+            ax4.set_title('D) Time Efficiency')
         
         plt.tight_layout()
         return fig
     
     def _create_performance_heatmap(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
-        """Create comprehensive performance heatmap."""
-        if 'eval_overlap_accuracy' not in self.results_df.columns:
+        """Create publication-ready performance heatmap visualization."""
+        # Define metrics to include in heatmap
+        metric_columns = []
+        metric_names = []
+        
+        if 'eval_overlap_accuracy' in self.results_df.columns:
+            metric_columns.append('eval_overlap_accuracy')
+            metric_names.append('Accuracy')
+        if 'eval_precision' in self.results_df.columns:
+            metric_columns.append('eval_precision')
+            metric_names.append('Precision')
+        if 'eval_recall' in self.results_df.columns:
+            metric_columns.append('eval_recall')
+            metric_names.append('Recall')
+        if 'eval_f1_score' in self.results_df.columns:
+            metric_columns.append('eval_f1_score')
+            metric_names.append('F1 Score')
+        
+        if not metric_columns:
             return None
         
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=figsize)
-        fig.suptitle('Performance Heatmap Analysis', fontsize=16, fontweight='bold')
+        fig, axes = plt.subplots(1, len(metric_columns), figsize=figsize)
+        if len(metric_columns) == 1:
+            axes = [axes]
         
-        # 1. Accuracy heatmap by recommender and gap
-        if 'meta_gap' in self.results_df.columns:
-            heatmap_data = self.results_df.pivot_table(
-                values='eval_overlap_accuracy', 
-                index='meta_recommender_name', 
-                columns='meta_gap', 
-                aggfunc='mean'
-            )
-            
-            sns.heatmap(heatmap_data, annot=True, fmt='.3f', cmap='RdYlGn', 
-                       ax=ax1, cbar_kws={'label': 'Mean Accuracy'})
-            ax1.set_title('A) Mean Accuracy by Gap')
-            ax1.set_xlabel('Query Gap')
-            ax1.set_ylabel('Recommender')
+        fig.suptitle('Performance Heatmaps by Recommender and Gap', fontsize=16, fontweight='bold')
         
-        # 2. Count heatmap
-        if 'meta_gap' in self.results_df.columns:
-            count_data = self.results_df.pivot_table(
-                values='eval_overlap_accuracy', 
-                index='meta_recommender_name', 
-                columns='meta_gap', 
-                aggfunc='count'
-            )
-            
-            sns.heatmap(count_data, annot=True, fmt='d', cmap='Blues', 
-                       ax=ax2, cbar_kws={'label': 'Number of Experiments'})
-            ax2.set_title('B) Experiment Count by Gap')
-            ax2.set_xlabel('Query Gap')
-            ax2.set_ylabel('Recommender')
-        
-        # 3. Standard deviation heatmap
-        if 'meta_gap' in self.results_df.columns:
-            std_data = self.results_df.pivot_table(
-                values='eval_overlap_accuracy', 
-                index='meta_recommender_name', 
-                columns='meta_gap', 
-                aggfunc='std'
-            )
-            
-            sns.heatmap(std_data, annot=True, fmt='.3f', cmap='YlOrRd', 
-                       ax=ax3, cbar_kws={'label': 'Accuracy Std Dev'})
-            ax3.set_title('C) Accuracy Variability by Gap')
-            ax3.set_xlabel('Query Gap')
-            ax3.set_ylabel('Recommender')
-        
-        # 4. Performance by result size category
-        if 'prediction_size_category' in self.results_df.columns:
-            size_perf = self.results_df.pivot_table(
-                values='eval_overlap_accuracy',
-                index='meta_recommender_name',
-                columns='prediction_size_category',
-                aggfunc='mean'
-            )
-            
-            sns.heatmap(size_perf, annot=True, fmt='.3f', cmap='RdYlGn',
-                       ax=ax4, cbar_kws={'label': 'Mean Accuracy'})
-            ax4.set_title('D) Accuracy by Result Size')
-            ax4.set_xlabel('Result Size Category')
-            ax4.set_ylabel('Recommender')
+        for i, (metric_col, metric_name) in enumerate(zip(metric_columns, metric_names)):
+            if 'meta_gap' in self.results_df.columns:
+                heatmap_data = self.results_df.pivot_table(
+                    values=metric_col, 
+                    index='meta_recommender_name', 
+                    columns='meta_gap', 
+                    aggfunc='mean'
+                )
+                
+                sns.heatmap(heatmap_data, annot=True, fmt='.3f', cmap='RdYlGn', 
+                           ax=axes[i], cbar_kws={'label': f'Mean {metric_name}'})
+                axes[i].set_title(f'{metric_name}')
+                axes[i].set_xlabel('Query Gap')
+                if i == 0:
+                    axes[i].set_ylabel('Recommender System')
+                else:
+                    axes[i].set_ylabel('')
+            else:
+                # Just show by recommender if no gap data
+                mean_values = self.results_df.groupby('meta_recommender_name')[metric_col].mean()
+                sns.heatmap(mean_values.values.reshape(-1, 1), 
+                           annot=True, fmt='.3f', cmap='RdYlGn',
+                           yticklabels=mean_values.index, xticklabels=[metric_name],
+                           ax=axes[i], cbar_kws={'label': f'Mean {metric_name}'})
+                axes[i].set_title(f'{metric_name}')
+                if i == 0:
+                    axes[i].set_ylabel('Recommender System')
+                else:
+                    axes[i].set_ylabel('')
         
         plt.tight_layout()
         return fig
     
     def _create_distribution_analysis(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
-        """Create publication-ready distribution analysis."""
-        if 'eval_overlap_accuracy' not in self.results_df.columns:
+        """Create publication-ready distribution analysis visualization."""
+        # Find available metric columns
+        metric_columns = []
+        if 'eval_overlap_accuracy' in self.results_df.columns:
+            metric_columns.append(('eval_overlap_accuracy', 'Accuracy'))
+        if 'eval_precision' in self.results_df.columns:
+            metric_columns.append(('eval_precision', 'Precision'))
+        if 'eval_recall' in self.results_df.columns:
+            metric_columns.append(('eval_recall', 'Recall'))
+        if 'eval_f1_score' in self.results_df.columns:
+            metric_columns.append(('eval_f1_score', 'F1 Score'))
+        
+        if not metric_columns:
             return None
         
+        # Use the first available metric for detailed distribution analysis
+        primary_metric, primary_name = metric_columns[0]
+        
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=figsize)
-        fig.suptitle('Statistical Distribution Analysis', fontsize=16, fontweight='bold')
+        fig.suptitle(f'{primary_name} Distribution Analysis', fontsize=16, fontweight='bold')
         
-        # 1. Histogram with KDE
+        # 1. Histograms by recommender
         for recommender in self.results_df['meta_recommender_name'].unique():
-            data = self.results_df[self.results_df['meta_recommender_name'] == recommender]['eval_overlap_accuracy']
-            sns.histplot(data, kde=True, alpha=0.6, label=recommender, ax=ax1)
+            data = self.results_df[self.results_df['meta_recommender_name'] == recommender][primary_metric]
+            ax1.hist(data, alpha=0.6, label=recommender, bins=20)
         
-        ax1.set_title('A) Accuracy Distribution with KDE')
-        ax1.set_xlabel('Overlap Accuracy')
-        ax1.set_ylabel('Density')
+        ax1.set_title(f'A) {primary_name} Distribution by Recommender')
+        ax1.set_xlabel(primary_name)
+        ax1.set_ylabel('Frequency')
         ax1.legend()
+        ax1.grid(True, alpha=0.3)
         
-        # 2. Q-Q plots for normality assessment
-        from scipy.stats import probplot
+        # 2. Violin plots
+        sns.violinplot(data=self.results_df, x='meta_recommender_name', y=primary_metric, ax=ax2)
+        ax2.set_title(f'B) {primary_name} Distribution Shape')
+        ax2.set_xlabel('Recommender System')
+        ax2.set_ylabel(primary_name)
+        ax2.tick_params(axis='x', rotation=45)
+        
+        # 3. Q-Q plots for normality assessment
+        from scipy import stats
         recommenders = self.results_df['meta_recommender_name'].unique()
-        n_recs = len(recommenders)
+        colors = plt.cm.tab10(np.linspace(0, 1, len(recommenders)))
         
-        if n_recs > 0:
-            for i, recommender in enumerate(recommenders[:4]):  # Limit to 4 for space
-                data = self.results_df[self.results_df['meta_recommender_name'] == recommender]['eval_overlap_accuracy'].dropna()
-                if len(data) > 0:
-                    probplot(data, dist="norm", plot=ax2)
-                    ax2.get_lines()[-2].set_alpha(0.7)
-                    ax2.get_lines()[-1].set_alpha(0.7)
+        for i, recommender in enumerate(recommenders):
+            data = self.results_df[self.results_df['meta_recommender_name'] == recommender][primary_metric]
+            data_clean = data.dropna()
+            if len(data_clean) > 1:
+                stats.probplot(data_clean, dist="norm", plot=ax3)
+                # Only show the last one to avoid overplotting
         
-        ax2.set_title('B) Q-Q Plot (Normality Check)')
+        ax3.set_title(f'C) Q-Q Plot for Normality Assessment')
+        ax3.grid(True, alpha=0.3)
         
-        # 3. Box-Cox transformation analysis
-        from scipy.stats import boxcox
-        
-        try:
-            # Only transform positive values
-            positive_data = self.results_df[self.results_df['eval_overlap_accuracy'] > 0]['eval_overlap_accuracy']
-            if len(positive_data) > 0:
-                transformed_data, lambda_val = boxcox(positive_data)
-                ax3.hist(transformed_data, bins=30, alpha=0.7, density=True)
-                ax3.set_title(f'C) Box-Cox Transformed Data (λ={lambda_val:.3f})')
-                ax3.set_xlabel('Transformed Accuracy')
-                ax3.set_ylabel('Density')
-        except Exception:
-            ax3.text(0.5, 0.5, 'Box-Cox transformation\nnot applicable', 
-                    ha='center', va='center', transform=ax3.transAxes)
-            ax3.set_title('C) Box-Cox Transformation')
-        
-        # 4. Cumulative distribution comparison
+        # 4. Cumulative distribution
         for recommender in self.results_df['meta_recommender_name'].unique():
-            data = self.results_df[self.results_df['meta_recommender_name'] == recommender]['eval_overlap_accuracy'].dropna()
-            if len(data) > 0:
-                sorted_data = np.sort(data)
-                cumulative = np.arange(1, len(sorted_data) + 1) / len(sorted_data)
-                ax4.plot(sorted_data, cumulative, label=recommender, linewidth=2)
+            data = self.results_df[self.results_df['meta_recommender_name'] == recommender][primary_metric]
+            data_sorted = np.sort(data.dropna())
+            y = np.arange(1, len(data_sorted) + 1) / len(data_sorted)
+            ax4.plot(data_sorted, y, label=recommender, linewidth=2)
         
-        ax4.set_title('D) Empirical Cumulative Distribution')
-        ax4.set_xlabel('Overlap Accuracy')
+        ax4.set_title(f'D) Cumulative Distribution Function')
+        ax4.set_xlabel(primary_name)
         ax4.set_ylabel('Cumulative Probability')
         ax4.legend()
         ax4.grid(True, alpha=0.3)
@@ -1167,667 +1506,97 @@ class ExperimentAnalyzer:
         return fig
     
     def _create_correlation_analysis(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
-        """Create correlation analysis visualization."""
-        # Select numeric columns
-        numeric_cols = self.results_df.select_dtypes(include=[np.number]).columns.tolist()
+        """Create publication-ready correlation analysis visualization."""
+        # Select numeric columns for correlation analysis
+        numeric_cols = []
+        col_names = []
         
-        # Remove non-meaningful columns
-        exclude_cols = ['meta_timestamp']
-        numeric_cols = [col for col in numeric_cols if col not in exclude_cols]
+        metric_mapping = {
+            'eval_overlap_accuracy': 'Accuracy',
+            'eval_precision': 'Precision', 
+            'eval_recall': 'Recall',
+            'eval_f1_score': 'F1 Score',
+            'eval_roc_auc': 'ROC-AUC',
+            'rec_predicted_count': 'Predicted Count',
+            'meta_gap': 'Query Gap'
+        }
+        
+        for col, name in metric_mapping.items():
+            if col in self.results_df.columns:
+                numeric_cols.append(col)
+                col_names.append(name)
         
         if len(numeric_cols) < 2:
             return None
         
+        # Calculate correlation matrix
+        corr_data = self.results_df[numeric_cols].corr()
+        corr_data.columns = col_names
+        corr_data.index = col_names
+        
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=figsize)
-        fig.suptitle('Correlation and Relationship Analysis', fontsize=16, fontweight='bold')
+        fig.suptitle('Correlation Analysis', fontsize=16, fontweight='bold')
         
-        # 1. Correlation matrix
-        corr_matrix = self.results_df[numeric_cols].corr()
-        mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
-        
-        sns.heatmap(corr_matrix, mask=mask, annot=True, fmt='.2f', cmap='RdBu_r', 
-                   center=0, ax=ax1, cbar_kws={'label': 'Correlation'})
+        # 1. Correlation heatmap
+        sns.heatmap(corr_data, annot=True, cmap='RdBu_r', center=0, 
+                   square=True, ax=ax1, cbar_kws={'label': 'Correlation'})
         ax1.set_title('A) Correlation Matrix')
         
-        # 2. Scatter plot of key relationships
-        if 'eval_overlap_accuracy' in numeric_cols and 'meta_execution_time_seconds' in numeric_cols:
-            for recommender in self.results_df['meta_recommender_name'].unique():
-                data = self.results_df[self.results_df['meta_recommender_name'] == recommender]
-                ax2.scatter(data['meta_execution_time_seconds'], data['eval_overlap_accuracy'], 
-                           label=recommender, alpha=0.6, s=30)
+        # 2. Scatter plot of top correlated pair
+        if len(numeric_cols) >= 2:
+            # Find highest correlation (excluding diagonal)
+            corr_abs = np.abs(corr_data.values)
+            np.fill_diagonal(corr_abs, 0)
+            max_corr_idx = np.unravel_index(np.argmax(corr_abs), corr_abs.shape)
             
-            ax2.set_title('B) Accuracy vs Execution Time')
-            ax2.set_xlabel('Execution Time (seconds)')
-            ax2.set_ylabel('Overlap Accuracy')
-            ax2.set_xscale('log')
-            ax2.legend()
-            ax2.grid(True, alpha=0.3)
-        
-        # 3. Partial correlation plot
-        if len(numeric_cols) >= 3:
-            # Create pairplot for subset of variables
-            key_vars = [col for col in ['eval_overlap_accuracy', 'meta_execution_time_seconds', 
-                                      'rec_predicted_count', 'meta_gap'] if col in numeric_cols][:4]
+            col1, col2 = numeric_cols[max_corr_idx[0]], numeric_cols[max_corr_idx[1]]
+            name1, name2 = col_names[max_corr_idx[0]], col_names[max_corr_idx[1]]
             
-            if len(key_vars) >= 2:
-                subset_data = self.results_df[key_vars + ['meta_recommender_name']].dropna()
-                if len(subset_data) > 0:
-                    # Create scatter plot matrix
-                    from pandas.plotting import scatter_matrix
-                    scatter_matrix(subset_data[key_vars], ax=ax3, alpha=0.6, figsize=(6, 6))
-                    ax3.set_title('C) Scatter Plot Matrix')
+            sns.scatterplot(data=self.results_df, x=col1, y=col2, 
+                           hue='meta_recommender_name', ax=ax2, alpha=0.7)
+            ax2.set_title(f'B) {name1} vs {name2}')
+            ax2.set_xlabel(name1)
+            ax2.set_ylabel(name2)
+            ax2.legend(title='Recommender', bbox_to_anchor=(1.05, 1), loc='upper left')
         
-        # 4. Feature importance (if accuracy is available)
+        # 3. Correlation strength distribution
+        corr_values = corr_data.values[np.triu_indices_from(corr_data.values, k=1)]
+        ax3.hist(corr_values, bins=20, alpha=0.7, color='skyblue', edgecolor='black')
+        ax3.set_title('C) Correlation Strength Distribution')
+        ax3.set_xlabel('Correlation Coefficient')
+        ax3.set_ylabel('Frequency')
+        ax3.grid(True, alpha=0.3)
+        
+        # 4. Feature importance (correlation with primary metric)
         if 'eval_overlap_accuracy' in numeric_cols:
-            try:
-                from sklearn.ensemble import RandomForestRegressor
-                from sklearn.preprocessing import LabelEncoder
-                
-                # Prepare data for feature importance
-                feature_cols = [col for col in numeric_cols if col != 'eval_overlap_accuracy']
-                if len(feature_cols) > 0:
-                    X = self.results_df[feature_cols].fillna(0)
-                    y = self.results_df['eval_overlap_accuracy'].fillna(0)
-                    
-                    rf = RandomForestRegressor(n_estimators=100, random_state=42)
-                    rf.fit(X, y)
-                    
-                    importance_df = pd.DataFrame({
-                        'feature': feature_cols,
-                        'importance': rf.feature_importances_
-                    }).sort_values('importance', ascending=True)
-                    
-                    ax4.barh(importance_df['feature'], importance_df['importance'])
-                    ax4.set_title('D) Feature Importance for Accuracy')
-                    ax4.set_xlabel('Importance')
-            except ImportError:
-                ax4.text(0.5, 0.5, 'sklearn not available\nfor feature importance', 
-                        ha='center', va='center', transform=ax4.transAxes)
-                ax4.set_title('D) Feature Importance')
+            primary_corr = corr_data['Accuracy'].drop('Accuracy').abs().sort_values(ascending=True)
+            ax4.barh(range(len(primary_corr)), primary_corr.values)
+            ax4.set_yticks(range(len(primary_corr)))
+            ax4.set_yticklabels(primary_corr.index)
+            ax4.set_title('D) Feature Correlation with Accuracy')
+            ax4.set_xlabel('Absolute Correlation')
+            ax4.grid(True, alpha=0.3)
+        else:
+            ax4.text(0.5, 0.5, 'Accuracy data not available\nfor feature importance', 
+                    ha='center', va='center', transform=ax4.transAxes, fontsize=12)
+            ax4.set_title('D) Feature Importance')
         
         plt.tight_layout()
         return fig
     
-    def _create_error_analysis(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
-        """Create error and failure analysis visualization."""
-        if 'meta_status' not in self.results_df.columns:
-            return None
+        colors = plt.cm.Set3(np.linspace(0, 1, len(recommender_means)))
+        for idx, (recommender, means) in enumerate(recommender_means.items()):
+            values = means + means[:1]  # Complete the circle
+            ax.plot(angles, values, 'o-', linewidth=2, label=recommender, color=colors[idx])
+            ax.fill(angles, values, alpha=0.25, color=colors[idx])
         
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=figsize)
-        fig.suptitle('Error and Failure Analysis', fontsize=16, fontweight='bold')
-        
-        # 1. Success rate by recommender
-        success_rates = self.results_df.groupby('meta_recommender_name').apply(
-            lambda x: (x['meta_status'] == 'completed').mean()
-        ).sort_values(ascending=False)
-        
-        bars = ax1.bar(success_rates.index, success_rates.values)
-        ax1.set_title('A) Success Rate by Recommender')
-        ax1.set_xlabel('Recommender System')
-        ax1.set_ylabel('Success Rate')
-        ax1.tick_params(axis='x', rotation=45)
-        
-        # Add value labels
-        for bar, rate in zip(bars, success_rates.values):
-            height = bar.get_height()
-            ax1.text(bar.get_x() + bar.get_width()/2., height + 0.01,
-                    f'{rate:.3f}', ha='center', va='bottom')
-        
-        # 2. Error patterns by gap (if available)
-        if 'meta_gap' in self.results_df.columns:
-            error_by_gap = self.results_df.groupby(['meta_gap', 'meta_recommender_name']).apply(
-                lambda x: (x['meta_status'] != 'completed').mean()
-            ).reset_index()
-            error_by_gap.columns = ['gap', 'recommender', 'error_rate']
-            
-            error_pivot = error_by_gap.pivot(index='recommender', columns='gap', values='error_rate')
-            sns.heatmap(error_pivot, annot=True, fmt='.2f', cmap='Reds', 
-                       ax=ax2, cbar_kws={'label': 'Error Rate'})
-            ax2.set_title('B) Error Rate by Gap')
-            ax2.set_xlabel('Query Gap')
-            ax2.set_ylabel('Recommender')
-        
-        # 3. Status distribution
-        status_counts = self.results_df['meta_status'].value_counts()
-        wedges, texts, autotexts = ax3.pie(status_counts.values, labels=status_counts.index, 
-                                          autopct='%1.1f%%', startangle=90)
-        ax3.set_title('C) Overall Status Distribution')
-        
-        # 4. Time to failure analysis (if execution time available)
-        if 'meta_execution_time_seconds' in self.results_df.columns:
-            failed_data = self.results_df[self.results_df['meta_status'] != 'completed']
-            success_data = self.results_df[self.results_df['meta_status'] == 'completed']
-            
-            if len(failed_data) > 0 and len(success_data) > 0:
-                ax4.hist(success_data['meta_execution_time_seconds'], bins=20, alpha=0.7, 
-                        label='Successful', density=True)
-                ax4.hist(failed_data['meta_execution_time_seconds'], bins=20, alpha=0.7, 
-                        label='Failed', density=True)
-                ax4.set_title('D) Execution Time: Success vs Failure')
-                ax4.set_xlabel('Execution Time (seconds)')
-                ax4.set_ylabel('Density')
-                ax4.set_xscale('log')
-                ax4.legend()
-        
-        plt.tight_layout()
-        return fig
-    
-    def _create_temporal_analysis(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
-        """Create temporal analysis of experimental results."""
-        if 'meta_timestamp' not in self.results_df.columns:
-            return None
-        
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=figsize)
-        fig.suptitle('Temporal Analysis of Experiments', fontsize=16, fontweight='bold')
-        
-        # Ensure timestamp is datetime
-        self.results_df['meta_timestamp'] = pd.to_datetime(self.results_df['meta_timestamp'])
-        
-        # 1. Experiment count over time
-        hourly_counts = self.results_df.groupby([
-            pd.Grouper(key='meta_timestamp', freq='H'),
-            'meta_recommender_name'
-        ]).size().reset_index()
-        hourly_counts.columns = ['timestamp', 'recommender', 'count']
-        
-        for recommender in hourly_counts['recommender'].unique():
-            data = hourly_counts[hourly_counts['recommender'] == recommender]
-            ax1.plot(data['timestamp'], data['count'], label=recommender, marker='o')
-        
-        ax1.set_title('A) Experiment Frequency Over Time')
-        ax1.set_xlabel('Time')
-        ax1.set_ylabel('Experiments per Hour')
-        ax1.legend()
-        ax1.tick_params(axis='x', rotation=45)
-        
-        # 2. Performance over time
-        if 'eval_overlap_accuracy' in self.results_df.columns:
-            hourly_perf = self.results_df.groupby([
-                pd.Grouper(key='meta_timestamp', freq='H'),
-                'meta_recommender_name'
-            ])['eval_overlap_accuracy'].mean().reset_index()
-            
-            for recommender in hourly_perf['meta_recommender_name'].unique():
-                data = hourly_perf[hourly_perf['meta_recommender_name'] == recommender]
-                ax2.plot(data['meta_timestamp'], data['eval_overlap_accuracy'], 
-                        label=recommender, marker='o')
-            
-            ax2.set_title('B) Performance Over Time')
-            ax2.set_xlabel('Time')
-            ax2.set_ylabel('Mean Accuracy')
-            ax2.legend()
-            ax2.tick_params(axis='x', rotation=45)
-        
-        # 3. Execution time trends
-        if 'meta_execution_time_seconds' in self.results_df.columns:
-            hourly_time = self.results_df.groupby([
-                pd.Grouper(key='meta_timestamp', freq='H'),
-                'meta_recommender_name'
-            ])['meta_execution_time_seconds'].mean().reset_index()
-            
-            for recommender in hourly_time['meta_recommender_name'].unique():
-                data = hourly_time[hourly_time['meta_recommender_name'] == recommender]
-                ax3.plot(data['meta_timestamp'], data['meta_execution_time_seconds'], 
-                        label=recommender, marker='o')
-            
-            ax3.set_title('C) Execution Time Trends')
-            ax3.set_xlabel('Time')
-            ax3.set_ylabel('Mean Execution Time (s)')
-            ax3.set_yscale('log')
-            ax3.legend()
-            ax3.tick_params(axis='x', rotation=45)
-        
-        # 4. Daily experiment summary
-        daily_summary = self.results_df.groupby(
-            self.results_df['meta_timestamp'].dt.date
-        ).agg({
-            'meta_recommender_name': 'count',
-            'eval_overlap_accuracy': 'mean' if 'eval_overlap_accuracy' in self.results_df.columns else lambda x: 0,
-            'meta_execution_time_seconds': 'mean' if 'meta_execution_time_seconds' in self.results_df.columns else lambda x: 0
-        }).reset_index()
-        
-        daily_summary.columns = ['date', 'total_experiments', 'mean_accuracy', 'mean_time']
-        
-        ax4_twin = ax4.twinx()
-        line1 = ax4.plot(daily_summary['date'], daily_summary['total_experiments'], 
-                        'b-o', label='Total Experiments')
-        
-        if 'eval_overlap_accuracy' in self.results_df.columns:
-            line2 = ax4_twin.plot(daily_summary['date'], daily_summary['mean_accuracy'], 
-                                'r-s', label='Mean Accuracy')
-        
-        ax4.set_title('D) Daily Experiment Summary')
-        ax4.set_xlabel('Date')
-        ax4.set_ylabel('Total Experiments', color='b')
-        ax4_twin.set_ylabel('Mean Accuracy', color='r')
-        ax4.tick_params(axis='x', rotation=45)
-        
-        # Combine legends
-        lines = line1
-        if 'eval_overlap_accuracy' in self.results_df.columns:
-            lines += line2
-        labels = [l.get_label() for l in lines]
-        ax4.legend(lines, labels, loc='upper left')
-        
-        plt.tight_layout()
-        return fig
-    
-    def _create_statistical_summary_plot(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
-        """Create statistical summary visualization."""
-        if 'eval_overlap_accuracy' not in self.results_df.columns:
-            return None
-        
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=figsize)
-        fig.suptitle('Statistical Summary and Tests', fontsize=16, fontweight='bold')
-        
-        # 1. Summary statistics table as plot
-        summary_stats = self.results_df.groupby('meta_recommender_name')['eval_overlap_accuracy'].describe()
-        
-        # Create table plot
-        ax1.axis('tight')
-        ax1.axis('off')
-        table_data = summary_stats.round(4).reset_index()
-        table = ax1.table(cellText=table_data.values, colLabels=table_data.columns,
-                         cellLoc='center', loc='center')
-        table.auto_set_font_size(False)
-        table.set_fontsize(9)
-        table.scale(1.2, 1.5)
-        ax1.set_title('A) Summary Statistics')
-        
-        # 2. Effect sizes between recommenders
-        recommenders = self.results_df['meta_recommender_name'].unique()
-        effect_sizes = []
-        
-        for i, rec1 in enumerate(recommenders):
-            for rec2 in recommenders[i+1:]:
-                data1 = self.results_df[self.results_df['meta_recommender_name'] == rec1]['eval_overlap_accuracy'].dropna()
-                data2 = self.results_df[self.results_df['meta_recommender_name'] == rec2]['eval_overlap_accuracy'].dropna()
-                
-                if len(data1) > 1 and len(data2) > 1:
-                    # Cohen's d
-                    pooled_std = np.sqrt(((len(data1) - 1) * data1.var() + (len(data2) - 1) * data2.var()) / 
-                                       (len(data1) + len(data2) - 2))
-                    effect_size = (data1.mean() - data2.mean()) / pooled_std
-                    effect_sizes.append({
-                        'comparison': f'{rec1}\nvs\n{rec2}',
-                        'effect_size': effect_size
-                    })
-        
-        if effect_sizes:
-            effect_df = pd.DataFrame(effect_sizes)
-            bars = ax2.barh(effect_df['comparison'], effect_df['effect_size'])
-            ax2.set_title('B) Effect Sizes (Cohen\'s d)')
-            ax2.set_xlabel('Effect Size')
-            ax2.axvline(x=0, color='black', linestyle='-', alpha=0.3)
-            ax2.axvline(x=0.2, color='green', linestyle='--', alpha=0.5, label='Small')
-            ax2.axvline(x=0.5, color='orange', linestyle='--', alpha=0.5, label='Medium')
-            ax2.axvline(x=0.8, color='red', linestyle='--', alpha=0.5, label='Large')
-            ax2.legend()
-        
-        # 3. Confidence intervals
-        confidence_intervals = []
-        for recommender in recommenders:
-            data = self.results_df[self.results_df['meta_recommender_name'] == recommender]['eval_overlap_accuracy'].dropna()
-            if len(data) > 1:
-                from scipy import stats
-                mean = data.mean()
-                sem = data.sem()
-                ci = stats.t.interval(0.95, len(data)-1, loc=mean, scale=sem)
-                confidence_intervals.append({
-                    'recommender': recommender,
-                    'mean': mean,
-                    'ci_lower': ci[0],
-                    'ci_upper': ci[1],
-                    'error': ci[1] - mean
-                })
-        
-        if confidence_intervals:
-            ci_df = pd.DataFrame(confidence_intervals)
-            bars = ax3.bar(ci_df['recommender'], ci_df['mean'], 
-                          yerr=ci_df['error'], capsize=5, alpha=0.8)
-            ax3.set_title('C) 95% Confidence Intervals')
-            ax3.set_xlabel('Recommender System')
-            ax3.set_ylabel('Mean Accuracy')
-            ax3.tick_params(axis='x', rotation=45)
-            
-            # Add value labels
-            for bar, mean_val in zip(bars, ci_df['mean']):
-                height = bar.get_height()
-                ax3.text(bar.get_x() + bar.get_width()/2., height + 0.01,
-                        f'{mean_val:.3f}', ha='center', va='bottom', fontsize=9)
-        
-        # 4. Power analysis simulation
-        if len(recommenders) >= 2:
-            # Simulate power analysis for detecting differences
-            from scipy.stats import ttest_ind
-            
-            power_results = []
-            effect_sizes_test = [0.1, 0.2, 0.3, 0.5, 0.8, 1.0]
-            
-            for effect_size in effect_sizes_test:
-                # Use first two recommenders as reference
-                ref_data = self.results_df[self.results_df['meta_recommender_name'] == recommenders[0]]['eval_overlap_accuracy'].dropna()
-                
-                if len(ref_data) > 10:
-                    power_count = 0
-                    n_simulations = 100
-                    
-                    for _ in range(n_simulations):
-                        # Simulate data with known effect size
-                        group1 = np.random.normal(ref_data.mean(), ref_data.std(), len(ref_data))
-                        group2 = np.random.normal(ref_data.mean() + effect_size * ref_data.std(), 
-                                                ref_data.std(), len(ref_data))
-                        
-                        _, p_value = ttest_ind(group1, group2)
-                        if p_value < 0.05:
-                            power_count += 1
-                    
-                    power = power_count / n_simulations
-                    power_results.append({'effect_size': effect_size, 'power': power})
-            
-            if power_results:
-                power_df = pd.DataFrame(power_results)
-                ax4.plot(power_df['effect_size'], power_df['power'], 'bo-', linewidth=2)
-                ax4.axhline(y=0.8, color='red', linestyle='--', alpha=0.7, label='80% Power')
-                ax4.set_title('D) Statistical Power Analysis')
-                ax4.set_xlabel('Effect Size')
-                ax4.set_ylabel('Statistical Power')
-                ax4.grid(True, alpha=0.3)
-                ax4.legend()
-        
-        plt.tight_layout()
-        return fig
-    
-    def _add_statistical_annotations(self, ax, x_col: str, y_col: str):
-        """Add statistical significance annotations to plots."""
-        try:
-            from scipy.stats import ttest_ind
-            
-            groups = self.results_df[x_col].unique()
-            if len(groups) < 2:
-                return
-            
-            # Perform pairwise t-tests
-            max_y = self.results_df[y_col].max()
-            y_offset = max_y * 0.05
-            
-            for i, group1 in enumerate(groups[:-1]):
-                for j, group2 in enumerate(groups[i+1:], i+1):
-                    data1 = self.results_df[self.results_df[x_col] == group1][y_col].dropna()
-                    data2 = self.results_df[self.results_df[x_col] == group2][y_col].dropna()
-                    
-                    if len(data1) > 1 and len(data2) > 1:
-                        _, p_value = ttest_ind(data1, data2)
-                        
-                        if p_value < 0.001:
-                            sig_text = '***'
-                        elif p_value < 0.01:
-                            sig_text = '**'
-                        elif p_value < 0.05:
-                            sig_text = '*'
-                        else:
-                            sig_text = 'ns'
-                        
-                        # Add significance annotation
-                        y_pos = max_y + y_offset * (j - i)
-                        ax.annotate(sig_text, xy=((i + j) / 2, y_pos), 
-                                  ha='center', va='bottom', fontsize=10)
-                        
-                        # Add line
-                        ax.plot([i, j], [y_pos, y_pos], 'k-', alpha=0.5)
-                        
-        except ImportError:
-            pass  # scipy not available
-    
-    def _create_publication_dashboard(self, output_dir: Path) -> str:
-        """Create an HTML dashboard summarizing all visualizations."""
-        
-        dashboard_html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Publication-Ready Visualization Dashboard</title>
-            <style>
-                body {{ 
-                    font-family: 'Times New Roman', Times, serif; 
-                    margin: 20px; 
-                    line-height: 1.6; 
-                    background-color: #f8f9fa;
-                }}
-                .header {{ 
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    color: white; 
-                    padding: 30px; 
-                    text-align: center; 
-                    border-radius: 10px;
-                    margin-bottom: 30px;
-                }}
-                .section {{ 
-                    background: white;
-                    margin: 20px 0; 
-                    padding: 25px; 
-                    border-radius: 10px;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                }}
-                .viz-grid {{ 
-                    display: grid; 
-                    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
-                    gap: 20px; 
-                    margin: 20px 0; 
-                }}
-                .viz-item {{ 
-                    background: white;
-                    border: 1px solid #ddd; 
-                    border-radius: 8px; 
-                    padding: 15px;
-                    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-                }}
-                .viz-item h3 {{ 
-                    margin-top: 0; 
-                    color: #333;
-                    border-bottom: 2px solid #667eea;
-                    padding-bottom: 10px;
-                }}
-                .metric {{ 
-                    background: #e9ecef; 
-                    padding: 15px; 
-                    margin: 10px 0; 
-                    border-radius: 5px;
-                    border-left: 4px solid #667eea;
-                }}
-                .highlight {{ 
-                    background: #d4edda; 
-                    border-left: 4px solid #28a745; 
-                }}
-                table {{ 
-                    border-collapse: collapse; 
-                    width: 100%; 
-                    margin: 15px 0; 
-                }}
-                th, td {{ 
-                    border: 1px solid #ddd; 
-                    padding: 12px; 
-                    text-align: left; 
-                }}
-                th {{ 
-                    background-color: #667eea; 
-                    color: white;
-                }}
-                .number {{ 
-                    text-align: right; 
-                }}
-                .download-links {{ 
-                    background: #fff3cd; 
-                    padding: 15px; 
-                    border-radius: 5px;
-                    margin: 20px 0;
-                }}
-                .download-links a {{ 
-                    color: #856404; 
-                    text-decoration: none; 
-                    margin-right: 15px;
-                    font-weight: bold;
-                }}
-                .footer {{ 
-                    text-align: center; 
-                    margin-top: 40px; 
-                    padding: 20px; 
-                    background: #343a40; 
-                    color: white;
-                    border-radius: 10px;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <h1>Publication-Ready Visualization Dashboard</h1>
-                <p>Comprehensive Analysis of Recommender System Experiments</p>
-                <p>Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-            </div>
-        """
-        
-        # Add dataset overview
-        if self.results_df is not None and not self.results_df.empty:
-            dashboard_html += f"""
-            <div class="section">
-                <h2>📊 Dataset Overview</h2>
-                <div class="metric">
-                    <strong>Total Experiments:</strong> {len(self.results_df):,}
-                </div>
-                <div class="metric">
-                    <strong>Unique Sessions:</strong> {self.results_df['meta_session_id'].nunique():,}
-                </div>
-                <div class="metric">
-                    <strong>Recommenders Tested:</strong> {', '.join(self.results_df['meta_recommender_name'].unique())}
-                </div>
-                <div class="metric">
-                    <strong>Date Range:</strong> {self.results_df['meta_timestamp'].min()} to {self.results_df['meta_timestamp'].max()}
-                </div>
-            </div>
-            """
-        
-        # Add visualization descriptions
-        visualizations = [
-            {
-                "name": "Accuracy Comparison",
-                "file": "accuracy_comparison.png",
-                "description": "Comprehensive comparison of recommender accuracy using box plots, violin plots, confidence intervals, and cumulative distributions. Shows statistical significance between systems."
-            },
-            {
-                "name": "Gap Analysis", 
-                "file": "gap_analysis.png",
-                "description": "Analysis of how query gap affects recommender performance. Includes trend lines, heatmaps, and effect size calculations."
-            },
-            {
-                "name": "Result Size Analysis",
-                "file": "result_size_analysis.png", 
-                "description": "Impact of predicted result set size on accuracy and success rates. Shows scaling behavior and size category effects."
-            },
-            {
-                "name": "Execution Time Analysis",
-                "file": "execution_time_analysis.png",
-                "description": "Performance timing analysis including efficiency metrics (accuracy per second) and time distribution patterns."
-            },
-            {
-                "name": "Performance Heatmap",
-                "file": "performance_heatmap.png",
-                "description": "Multi-dimensional performance visualization showing accuracy, variability, and experiment counts across different conditions."
-            },
-            {
-                "name": "Distribution Analysis", 
-                "file": "distribution_analysis.png",
-                "description": "Statistical distribution analysis including normality checks, transformations, and empirical cumulative distributions."
-            },
-            {
-                "name": "Correlation Analysis",
-                "file": "correlation_analysis.png", 
-                "description": "Correlation matrices and relationship analysis between experimental variables and performance metrics."
-            },
-            {
-                "name": "Error Analysis",
-                "file": "error_analysis.png",
-                "description": "Failure pattern analysis including success rates, error conditions, and time-to-failure distributions."
-            },
-            {
-                "name": "Temporal Analysis",
-                "file": "temporal_analysis.png",
-                "description": "Time-based analysis showing experiment frequency, performance trends, and temporal patterns."
-            },
-            {
-                "name": "Statistical Summary",
-                "file": "statistical_summary_plot.png",
-                "description": "Comprehensive statistical analysis including effect sizes, confidence intervals, and power analysis."
-            }
-        ]
-        
-        dashboard_html += """
-            <div class="section">
-                <h2>📈 Available Visualizations</h2>
-                <div class="viz-grid">
-        """
-        
-        for viz in visualizations:
-            dashboard_html += f"""
-                <div class="viz-item">
-                    <h3>{viz['name']}</h3>
-                    <p>{viz['description']}</p>
-                    <div class="download-links">
-                        <a href="{viz['file']}" target="_blank">📄 View PNG</a>
-                    </div>
-                </div>
-            """
-        
-        dashboard_html += """
-                </div>
-            </div>
-        """
-        
-        # Add download section
-        dashboard_html += """
-            <div class="section">
-                <h2>📁 Download Options</h2>
-                <div class="download-links">
-                    <a href="publication_figures.pdf" target="_blank">📑 Download All Figures (PDF)</a>
-                    <a href="../analysis_exports/experimental_results.csv" target="_blank">📊 Download Raw Data (CSV)</a>
-                    <a href="../analysis_exports/statistical_summary.json" target="_blank">📋 Download Statistics (JSON)</a>
-                </div>
-            </div>
-        """
-        
-        # Add usage guide
-        dashboard_html += """
-            <div class="section">
-                <h2>📖 Usage Guide</h2>
-                <div class="metric">
-                    <h4>For Publications:</h4>
-                    <p>All figures are generated at 300 DPI and are publication-ready. Use the individual PNG files for journal submissions or the combined PDF for reports.</p>
-                </div>
-                <div class="metric">
-                    <h4>For Presentations:</h4>
-                    <p>PNG files can be directly inserted into PowerPoint or similar presentation software. All text is sized appropriately for projection.</p>
-                </div>
-                <div class="metric">
-                    <h4>For Further Analysis:</h4>
-                    <p>Download the raw data files and use the provided R script or Jupyter notebook templates for custom analysis.</p>
-                </div>
-            </div>
-        """
-        
-        dashboard_html += """
-            <div class="footer">
-                <p>Generated by ExperimentAnalyzer with Publication-Ready Visualizations</p>
-                <p>All figures follow publication standards with appropriate fonts, sizes, and statistical annotations</p>
-            </div>
-        </body>
-        </html>
-        """
-        
-        dashboard_path = output_dir / "visualization_dashboard.html"
-        with open(dashboard_path, 'w') as f:
-            f.write(dashboard_html)
-        
-        logger.info(f"Visualization dashboard created: {dashboard_path}")
-        return str(dashboard_path)
+        # Customize the radar chart
+        ax.set_xticks(angles[:-1])
+        ax.set_xticklabels(metric_names)
+        ax.set_ylim(0, 1)
+        ax.set_title('Multi-Metric Performance Radar', pad=20, fontsize=14, fontweight='bold')
+        ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0))
+        ax.grid(True)
 
 
 def main():
@@ -1835,7 +1604,7 @@ def main():
     
     # Initialize analyzer with global output directory
     analyzer = ExperimentAnalyzer(
-        experiment_data_dir="results/experiment/experiment_results_20250708_132243",
+        experiment_data_dir="results/experiment/single_session_test_20250715_130810",
         include_tuple_analysis=False
     )
     
@@ -1859,7 +1628,7 @@ def main():
             print(f"  - Unique sessions: {overview.get('unique_sessions', 'N/A')}")
         
         # Create detailed report
-        analyzer.create_detailed_comparison_report("comparison_report.html")
+        # analyzer.create_detailed_comparison_report("comparison_report.html")
         print("✓ Detailed comparison report created")
         
         # Export for further analysis
