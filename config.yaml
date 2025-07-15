@@ -37,7 +37,7 @@ interestingness:
 recommendation:
   enabled: true
   method: 'hybrid'  # Options: association_rules, summaries, hybrid
-  recommender_type: 'interestingness'  # Options: dummy, random, clustering, interestingness
+  recommender_type: 'interestingness'  # Options: dummy, random, clustering, interestingness, query_expansion
   mode: 'top_k'  # Options: top_k, top_quartile, percentage
   top_k: 10  # Number of tuples to recommend (for top_k mode)
   percentage: 0.1  # Percentage of tuples to recommend (for percentage mode)
@@ -52,6 +52,26 @@ clustering:
 
 random:
   random_seed: 42
+
+# NEW: Query Expansion Recommender Configuration
+query_expansion:
+  # Enable/disable different expansion strategies
+  enable_range_expansion: true
+  enable_constraint_relaxation: true
+  enable_join_exploration: true
+  enable_column_expansion: true
+  enable_similarity_search: true
+  
+  # Budget management to control computational cost
+  budget:
+    max_queries: 5              # Maximum number of expansion queries to execute
+    max_execution_time: 30.0    # Maximum total time in seconds
+    max_results_per_query: 1000 # Maximum results per individual query
+  
+  # Expansion parameters
+  range_expansion_factor: 0.2   # How much to expand numeric ranges (20%)
+  min_confidence_threshold: 0.3 # Minimum confidence for candidate queries
+  max_query_complexity: 5       # Maximum complexity score for generated queries
 
 evaluation:
   metrics:

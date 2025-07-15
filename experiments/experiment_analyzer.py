@@ -841,7 +841,6 @@ class ExperimentAnalyzer:
         
         # Create individual visualizations
         viz_methods = [
-            ("comprehensive_metrics_comparison", self._create_comprehensive_metrics_comparison),
             ("accuracy_comparison", self._create_accuracy_comparison),
             ("gap_analysis", self._create_gap_analysis),
             ("precision_gap_analysis", self._create_precision_gap_analysis),
@@ -852,10 +851,7 @@ class ExperimentAnalyzer:
             ("execution_time_analysis", self._create_execution_time_analysis),
             ("performance_heatmap", self._create_performance_heatmap),
             ("distribution_analysis", self._create_distribution_analysis),
-            ("correlation_analysis", self._create_correlation_analysis),
-            ("error_analysis", self._create_error_analysis),
-            ("temporal_analysis", self._create_temporal_analysis),
-            ("statistical_summary_plot", self._create_statistical_summary_plot)
+            ("correlation_analysis", self._create_correlation_analysis)
         ]
         
         figures = []
@@ -933,6 +929,116 @@ class ExperimentAnalyzer:
             'grid.alpha': 0.3
         })
     
+    def _create_publication_dashboard(self, output_dir: Path) -> str:
+        """Create a simple HTML dashboard for publication visualizations."""
+        
+        dashboard_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Publication Visualization Dashboard</title>
+            <style>
+                body {{ 
+                    font-family: 'Times New Roman', Times, serif; 
+                    margin: 20px; 
+                    line-height: 1.6; 
+                }}
+                .header {{ 
+                    background: #f8f9fa; 
+                    padding: 20px; 
+                    border-radius: 5px; 
+                    margin-bottom: 20px;
+                }}
+                .section {{ 
+                    margin: 20px 0; 
+                    padding: 15px; 
+                    border: 1px solid #ddd; 
+                    border-radius: 5px;
+                }}
+                .viz-grid {{ 
+                    display: grid; 
+                    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
+                    gap: 20px; 
+                }}
+                .viz-item {{ 
+                    border: 1px solid #ddd; 
+                    border-radius: 5px; 
+                    padding: 15px;
+                }}
+                .viz-item h3 {{ 
+                    margin-top: 0; 
+                    color: #333;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>Publication-Ready Visualization Dashboard</h1>
+                <p>Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            </div>
+            
+            <div class="section">
+                <h2>Available Visualizations</h2>
+                <div class="viz-grid">
+                    <div class="viz-item">
+                        <h3>Accuracy Comparison</h3>
+                        <p>Comprehensive comparison of all available performance metrics</p>
+                        <a href="accuracy_comparison.png">View PNG</a>
+                    </div>
+                    <div class="viz-item">
+                        <h3>Gap Analysis</h3>
+                        <p>Analysis of how query gap affects performance across metrics</p>
+                        <a href="gap_analysis.png">View PNG</a>
+                    </div>
+                    <div class="viz-item">
+                        <h3>Precision Gap Analysis</h3>
+                        <p>Detailed precision analysis vs query gap</p>
+                        <a href="precision_gap_analysis.png">View PNG</a>
+                    </div>
+                    <div class="viz-item">
+                        <h3>Recall Gap Analysis</h3>
+                        <p>Detailed recall analysis vs query gap</p>
+                        <a href="recall_gap_analysis.png">View PNG</a>
+                    </div>
+                    <div class="viz-item">
+                        <h3>F1 Score Gap Analysis</h3>
+                        <p>Detailed F1 score analysis vs query gap</p>
+                        <a href="f1_gap_analysis.png">View PNG</a>
+                    </div>
+                    <div class="viz-item">
+                        <h3>ROC-AUC Gap Analysis</h3>
+                        <p>Detailed ROC-AUC analysis vs query gap</p>
+                        <a href="roc_auc_gap_analysis.png">View PNG</a>
+                    </div>
+                    <div class="viz-item">
+                        <h3>Performance Heatmap</h3>
+                        <p>Multi-dimensional performance visualization</p>
+                        <a href="performance_heatmap.png">View PNG</a>
+                    </div>
+                    <div class="viz-item">
+                        <h3>Execution Time Analysis</h3>
+                        <p>Performance timing analysis and efficiency metrics</p>
+                        <a href="execution_time_analysis.png">View PNG</a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>Download Options</h2>
+                <p><a href="publication_figures.pdf">Download All Figures (PDF)</a></p>
+                <p>All figures are generated at 300 DPI and are publication-ready.</p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        dashboard_path = output_dir / "visualization_dashboard.html"
+        with open(dashboard_path, 'w') as f:
+            f.write(dashboard_html)
+        
+        logger.info(f"Visualization dashboard created: {dashboard_path}")
+        return str(dashboard_path)
+    
     def _create_accuracy_comparison(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
         """Create publication-ready comprehensive metrics comparison visualization."""
         
@@ -984,9 +1090,6 @@ class ExperimentAnalyzer:
             ax.set_xlabel('Recommender System')
             ax.set_ylabel(metric_name)
             ax.tick_params(axis='x', rotation=45)
-            
-            # Add statistical annotations
-            self._add_statistical_annotations(ax, 'meta_recommender_name', metric_col)
             
             # Add mean values as text annotations
             means = self.results_df.groupby('meta_recommender_name')[metric_col].mean()
@@ -1305,8 +1408,25 @@ class ExperimentAnalyzer:
         if not time_columns:
             return None
         
-        # Use the first available time column
+        # Use the first available time column and ensure it's numeric
         time_col = time_columns[0]
+        
+        # Convert time column to numeric if it's not already
+        if self.results_df[time_col].dtype == 'object' or pd.api.types.is_datetime64_any_dtype(self.results_df[time_col]):
+            try:
+                # If it's datetime, convert to seconds since epoch
+                if pd.api.types.is_datetime64_any_dtype(self.results_df[time_col]):
+                    # Skip this analysis if time column is datetime (not duration)
+                    return None
+                else:
+                    # Try to convert string to float
+                    self.results_df[time_col] = pd.to_numeric(self.results_df[time_col], errors='coerce')
+            except:
+                return None
+        
+        # Check if we have valid numeric data
+        if self.results_df[time_col].isna().all():
+            return None
         
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=figsize)
         fig.suptitle('Execution Time Analysis', fontsize=16, fontweight='bold')
@@ -1315,7 +1435,7 @@ class ExperimentAnalyzer:
         sns.boxplot(data=self.results_df, x='meta_recommender_name', y=time_col, ax=ax1)
         ax1.set_title('A) Execution Time Distribution by Recommender')
         ax1.set_xlabel('Recommender System')
-        ax1.set_ylabel('Execution Time')
+        ax1.set_ylabel('Execution Time (seconds)')
         ax1.tick_params(axis='x', rotation=45)
         
         # 2. Time vs data size (if available)
@@ -1324,7 +1444,7 @@ class ExperimentAnalyzer:
                            hue='meta_recommender_name', ax=ax2, alpha=0.7)
             ax2.set_title('B) Execution Time vs Result Size')
             ax2.set_xlabel('Number of Predicted Tuples')
-            ax2.set_ylabel('Execution Time')
+            ax2.set_ylabel('Execution Time (seconds)')
             ax2.legend(title='Recommender', bbox_to_anchor=(1.05, 1), loc='upper left')
         else:
             ax2.text(0.5, 0.5, 'Result size data not available', ha='center', va='center', 
@@ -1344,7 +1464,7 @@ class ExperimentAnalyzer:
             
             ax3.set_title('C) Average Execution Time vs Query Gap')
             ax3.set_xlabel('Query Gap')
-            ax3.set_ylabel('Average Execution Time')
+            ax3.set_ylabel('Average Execution Time (seconds)')
             ax3.legend()
             ax3.grid(True, alpha=0.3)
         else:
@@ -1354,7 +1474,9 @@ class ExperimentAnalyzer:
         
         # 4. Performance efficiency (accuracy per time)
         if 'eval_overlap_accuracy' in self.results_df.columns:
-            efficiency = self.results_df['eval_overlap_accuracy'] / (self.results_df[time_col] + 1e-6)
+            # Add small epsilon to avoid division by zero and handle potential NaN values
+            time_values = self.results_df[time_col].fillna(0) + 1e-6
+            efficiency = self.results_df['eval_overlap_accuracy'] / time_values
             efficiency_df = pd.DataFrame({
                 'recommender': self.results_df['meta_recommender_name'],
                 'time_efficiency': efficiency
