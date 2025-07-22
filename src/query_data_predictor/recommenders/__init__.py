@@ -15,6 +15,7 @@ from .index_recommender import IndexRecommender
 from .incremental_recommender import IncrementalRecommender
 from .embedding_recommender import EmbeddingRecommender
 from .query_expansion_recommender import QueryExpansionRecommender
+from .random_table_recommender import RandomTableRecommender
 
 __all__ = [
     'BaseRecommender',
@@ -29,5 +30,6 @@ __all__ = [
     'IndexRecommender',
     'IncrementalRecommender',
     'EmbeddingRecommender',
-    'QueryExpansionRecommender'
+    'QueryExpansionRecommender',
+    'RandomTableRecommender'
 ]
