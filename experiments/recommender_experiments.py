@@ -11,6 +11,7 @@ import pickle
 import yaml
 import hashlib
 import sys
+import re
 from pathlib import Path
 from typing import Dict, List, Any, Tuple, Optional
 from datetime import datetime
@@ -49,8 +50,218 @@ from query_data_predictor.recommenders import (
     InterestingnessRecommender,
     QueryExpansionRecommender
 )
+from query_data_predictor.query_runner import QueryRunner
 
 logger = logging.getLogger(__name__)
+
+
+class MockQueryRunner:
+    """Mock QueryRunner for testing QueryExpansionRecommender without a real database."""
+    
+    def __init__(self):
+        self.executed_queries = []
+    
+    def execute_query(self, query: str) -> pd.DataFrame:
+        """Execute a mock query and return sample astronomical data."""
+        self.executed_queries.append(query)
+        
+        # Generate mock SDSS-like data
+        np.random.seed(42)  # For reproducibility
+        n_rows = np.random.randint(10, 100)
+        
+        mock_data = {
+            'objID': np.random.randint(1000000, 9999999, n_rows),
+            'ra': np.random.uniform(0, 360, n_rows),
+            'dec': np.random.uniform(-90, 90, n_rows),
+            'z': np.random.uniform(0.1, 3.0, n_rows),
+            'zConf': np.random.uniform(0.5, 1.0, n_rows),
+            'modelMag_r': np.random.uniform(15, 25, n_rows),
+            'SpecClass': np.random.choice(['GALAXY', 'QSO', 'STAR'], n_rows),
+            'primTarget': np.random.randint(1, 1000, n_rows)
+        }
+        
+        return pd.DataFrame(mock_data)
+    
+    def connect(self):
+        """Mock connection."""
+        pass
+    
+    def disconnect(self):
+        """Mock disconnection."""
+        pass
+
+
+class RealDataQueryRunner:
+    """QueryRunner that uses real data from the dataset for testing QueryExpansionRecommender."""
+    
+    def __init__(self, dataloader: DataLoader, session_id: int):
+        """
+        Initialize with access to real data.
+        
+        Args:
+            dataloader: DataLoader instance with access to the dataset
+            session_id: Session ID to use as the source of real data
+        """
+        self.dataloader = dataloader
+        self.session_id = session_id
+        self.executed_queries = []
+        
+        # Load the session data to have access to all query results
+        try:
+            self.session_data = dataloader.get_results_for_session(session_id)
+            self.available_queries = sorted(self.session_data['query_position'].unique())
+            logger.info(f"RealDataQueryRunner initialized with session {session_id}, "
+                       f"{len(self.available_queries)} queries available")
+        except Exception as e:
+            logger.error(f"Failed to load session {session_id}: {e}")
+            # Fallback to mock data if real data fails
+            self.session_data = None
+            self.available_queries = []
+    
+    def execute_query(self, query: str) -> pd.DataFrame:
+        """
+        Execute a 'query' by returning real data from the dataset.
+        
+        Since we don't have a real database, we simulate query execution by:
+        1. Parsing the query to understand what kind of data is being requested
+        2. Returning appropriate real data from our dataset
+        """
+        self.executed_queries.append(query)
+        
+        if self.session_data is None or not self.available_queries:
+            # Fallback to mock data
+            return self._generate_fallback_data()
+        
+        try:
+            # Simple query interpretation - in a real system this would be much more sophisticated
+            selected_query_position = self._select_appropriate_query(query)
+            
+            # Load the actual results for this query
+            query_row = self.session_data[
+                self.session_data['query_position'] == selected_query_position
+            ].iloc[0]
+            
+            results_filepath = query_row['results_filepath']
+            results_path = Path(results_filepath)
+            
+            if results_path.exists():
+                with open(results_path, 'rb') as f:
+                    real_results = pickle.load(f)
+                
+                # Add some variation to simulate different query results
+                varied_results = self._add_query_variation(real_results, query)
+                
+                logger.debug(f"RealDataQueryRunner returned {len(varied_results)} rows "
+                           f"from query position {selected_query_position}")
+                
+                return varied_results
+            else:
+                logger.warning(f"Results file not found: {results_filepath}")
+                return self._generate_fallback_data()
+                
+        except Exception as e:
+            logger.warning(f"Error processing query: {e}")
+            return self._generate_fallback_data()
+    
+    def _select_appropriate_query(self, query: str) -> int:
+        """
+        Select an appropriate query position based on the query text.
+        This is a simplified approach - in reality you'd parse SQL properly.
+        """
+        query_lower = query.lower()
+        
+        # Try to match query characteristics to available data
+        if 'redshift' in query_lower or 'z ' in query_lower:
+            # Prefer queries that might have redshift data
+            for pos in [0, 5, 10, 15, 20]:
+                if pos in self.available_queries:
+                    return pos
+        
+        if 'count' in query_lower or 'limit' in query_lower:
+            # For count queries, use smaller result sets
+            for pos in [1, 3, 7, 11]:
+                if pos in self.available_queries:
+                    return pos
+        
+        if 'ra' in query_lower or 'dec' in query_lower or 'spatial' in query_lower:
+            # For spatial queries, use any available query
+            return np.random.choice(self.available_queries[:10])  # Use first 10 queries
+        
+        # Default: randomly select from available queries
+        return np.random.choice(self.available_queries)
+    
+    def _add_query_variation(self, real_results: pd.DataFrame, query: str) -> pd.DataFrame:
+        """
+        Add some variation to the real results to simulate different queries.
+        This makes the expansion queries return somewhat different but realistic data.
+        """
+        if real_results.empty:
+            return real_results
+        
+        # Make a copy to avoid modifying the original
+        varied_results = real_results.copy()
+        
+        query_lower = query.lower()
+        
+        # Simulate different query constraints by sampling/filtering the data
+        if 'between' in query_lower or 'range' in query_lower:
+            # For range queries, return a subset
+            n_samples = min(len(varied_results), np.random.randint(10, 100))
+            varied_results = varied_results.sample(n=n_samples, random_state=42).reset_index(drop=True)
+        
+        elif 'limit' in query_lower:
+            # Extract limit number if possible, otherwise use a random limit
+            try:
+                limit_match = re.search(r'limit\s+(\d+)', query_lower)
+                if limit_match:
+                    limit_val = min(int(limit_match.group(1)), len(varied_results))
+                    varied_results = varied_results.head(limit_val)
+                else:
+                    limit_val = min(50, len(varied_results))
+                    varied_results = varied_results.head(limit_val)
+            except:
+                varied_results = varied_results.head(50)
+        
+        elif 'similar' in query_lower or 'nearby' in query_lower:
+            # For similarity queries, add some noise to make results "similar but different"
+            if 'ra' in varied_results.columns and 'dec' in varied_results.columns:
+                # Add small random offsets to coordinates
+                ra_noise = np.random.normal(0, 0.01, len(varied_results))
+                dec_noise = np.random.normal(0, 0.01, len(varied_results))
+                varied_results['ra'] = varied_results['ra'] + ra_noise
+                varied_results['dec'] = varied_results['dec'] + dec_noise
+        
+        # Limit the number of results to avoid overwhelming the recommender
+        max_results = 200  # Reasonable limit for expansion queries
+        if len(varied_results) > max_results:
+            varied_results = varied_results.sample(n=max_results, random_state=42).reset_index(drop=True)
+        
+        return varied_results
+    
+    def _generate_fallback_data(self) -> pd.DataFrame:
+        """Generate fallback mock data when real data is not available."""
+        np.random.seed(42)
+        n_rows = np.random.randint(10, 50)
+        
+        # Generate data that matches the structure we've seen in real data
+        fallback_data = {
+            'ra': np.random.uniform(0, 360, n_rows),
+            'dec': np.random.uniform(-90, 90, n_rows),
+            'type': np.random.choice([3, 6], n_rows),  # SDSS object types
+            'modelmag_r': np.random.uniform(15, 25, n_rows),
+            'z': np.random.uniform(0.01, 2.0, n_rows),
+            'objid': np.random.randint(1000000000, 9999999999, n_rows)
+        }
+        
+        return pd.DataFrame(fallback_data)
+    
+    def connect(self):
+        """Mock connection."""
+        pass
+    
+    def disconnect(self):
+        """Mock disconnection."""
+        pass
 
 
 class RecommenderExperimentRunner:
@@ -118,11 +329,28 @@ class RecommenderExperimentRunner:
     
     def _initialize_recommenders(self) -> Dict[str, Any]:
         """Initialize all recommender instances."""
+        # Create a real data QueryRunner for QueryExpansionRecommender
+        # Use the first available session as the data source
+        sessions = self.dataloader.get_sessions()
+        if sessions:
+            # Use the first session as the data source for expansion queries
+            first_session = sessions[0]
+            real_query_runner = RealDataQueryRunner(self.dataloader, first_session)
+            logger.info(f"Using session {first_session} as data source for QueryExpansionRecommender")
+        else:
+            # Fallback to mock if no sessions available
+            real_query_runner = MockQueryRunner()
+            logger.warning("No sessions available, using mock data for QueryExpansionRecommender")
+        
         return {
             'dummy': DummyRecommender(self.recommender_config),
             'random': RandomRecommender(self.recommender_config),
             'clustering': ClusteringRecommender(self.recommender_config),
-            'interestingness': InterestingnessRecommender(self.recommender_config)
+            'interestingness': InterestingnessRecommender(self.recommender_config),
+            'query_expansion': QueryExpansionRecommender(
+                self.recommender_config, 
+                query_runner=real_query_runner
+            )
         }
     
     def run_enhanced_experiment(self, 
@@ -953,9 +1181,390 @@ class RecommenderExperimentRunner:
         import hashlib
         return hashlib.md5(s.encode()).hexdigest()[:16]
 
+    def run_query_expansion_gap_analysis(self, 
+                                       session_id: Optional[str] = None,
+                                       max_gap: int = 5,
+                                       focus_on_expansion: bool = True) -> Dict[str, Any]:
+        """
+        Run a focused gap analysis experiment specifically for the Query Expansion Recommender.
+        
+        Args:
+            session_id: Specific session to analyze (uses first available if None)
+            max_gap: Maximum gap between queries to test
+            focus_on_expansion: If True, only test QueryExpansionRecommender
+            
+        Returns:
+            Dictionary with detailed analysis of query expansion performance
+        """
+        # Select session
+        if session_id is None:
+            sessions = self.dataloader.get_sessions()
+            if not sessions:
+                return {"error": "No sessions available"}
+            session_id = sessions[0]  # Use first session
+        
+        logger.info(f"Running Query Expansion gap analysis on session {session_id}")
+        
+        # Start experiment session
+        exp_session_id = self.collector.start_experiment_session(
+            f"query_expansion_gap_analysis_{session_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
+        self.current_session_id = exp_session_id
+        
+        # Get query information
+        query_ids = self.query_result_sequence.get_ordered_query_ids(session_id)
+        if len(query_ids) < 2:
+            return {"error": "Insufficient queries in session", "session_id": session_id}
+        
+        logger.info(f"Session {session_id} has {len(query_ids)} queries, testing up to gap {max_gap}")
+        
+        # Initialize results tracking
+        gap_analysis_results = {
+            "session_id": session_id,
+            "experiment_session_id": exp_session_id,
+            "total_queries": len(query_ids),
+            "max_gap_tested": min(max_gap, len(query_ids) - 1),
+            "gap_results": {},
+            "expansion_details": {},
+            "performance_summary": {}
+        }
+        
+        # Select recommenders to test
+        if focus_on_expansion:
+            test_recommenders = {'query_expansion': self.recommenders['query_expansion']}
+        else:
+            test_recommenders = self.recommenders
+        
+        total_experiments = 0
+        successful_experiments = 0
+        
+        # Test each gap
+        for gap in range(1, min(max_gap + 1, len(query_ids))):
+            logger.info(f"Testing gap {gap}")
+            
+            gap_results = {
+                "gap": gap,
+                "query_pairs": [],
+                "recommender_results": {},
+                "average_metrics": {}
+            }
+            
+            # Test all query pairs with this gap
+            query_pairs = list(self.query_result_sequence.iter_query_result_pairs(session_id, gap))
+            
+            for current_id, future_id, current_results, future_results in query_pairs:
+                if current_results.empty:
+                    continue
+                
+                pair_info = {
+                    "current_query": current_id,
+                    "future_query": future_id,
+                    "current_size": len(current_results),
+                    "future_size": len(future_results),
+                    "results": {}
+                }
+                
+                # Test each recommender
+                for recommender_name, recommender in test_recommenders.items():
+                    total_experiments += 1
+                    
+                    try:
+                        # Get recommendations
+                        start_time = time.time()
+                        recommendations = recommender.recommend_tuples(current_results)
+                        execution_time = time.time() - start_time
+                        
+                        # Calculate metrics
+                        overlap_accuracy = self.evaluator.overlap_accuracy(
+                            previous=current_results,
+                            actual=future_results,
+                            predicted=recommendations
+                        )
+                        
+                        precision, recall, f1 = self._calculate_precision_recall_f1(
+                            recommendations, future_results, current_results
+                        )
+                        
+                        roc_auc = self._calculate_roc_auc(
+                            recommendations, future_results, current_results
+                        )
+                        
+                        # For QueryExpansionRecommender, capture additional details
+                        expansion_info = {}
+                        if recommender_name == 'query_expansion' and hasattr(recommender, 'query_runner'):
+                            query_runner = recommender.query_runner
+                            if hasattr(query_runner, 'executed_queries'):
+                                expansion_info = {
+                                    "queries_executed": len(query_runner.executed_queries),
+                                    "executed_queries": query_runner.executed_queries.copy(),
+                                    "recommendation_count": len(recommendations)
+                                }
+                                # Clear executed queries for next iteration
+                                query_runner.executed_queries.clear()
+                        
+                        # Create contexts for collector
+                        current_context = QueryContext(
+                            session_id=session_id,
+                            query_position=current_id,
+                            query_text=f"Query {current_id} from session {session_id}",
+                            query_hash=self._hash_string(f"Query {current_id}"),
+                            result_set_size=len(current_results)
+                        )
+                        
+                        future_context = QueryContext(
+                            session_id=session_id,
+                            query_position=future_id,
+                            query_text=f"Query {future_id} from session {session_id}",
+                            query_hash=self._hash_string(f"Query {future_id}"),
+                            result_set_size=len(future_results)
+                        )
+                        
+                        # Create recommendation result
+                        rec_result = RecommendationResult(
+                            experiment_id="",  # Will be generated
+                            predicted_tuples=recommendations,
+                            recommendation_metadata={
+                                "recommender_type": recommender_name,
+                                "input_size": len(current_results),
+                                "output_size": len(recommendations),
+                                "expansion_info": expansion_info
+                            }
+                        )
+                        
+                        # Create evaluation result
+                        eval_result = EvaluationResult(
+                            experiment_id="",  # Will be generated
+                            overlap_accuracy=overlap_accuracy,
+                            jaccard_similarity=self.evaluator.jaccard_similarity(recommendations, future_results),
+                            precision=precision,
+                            recall=recall,
+                            f1_score=f1,
+                            exact_matches=self._count_exact_matches(recommendations, future_results),
+                            predicted_count=len(recommendations),
+                            actual_count=len(future_results),
+                            intersection_count=len(pd.merge(recommendations, future_results, how='inner')),
+                            union_count=len(pd.concat([recommendations, future_results]).drop_duplicates()),
+                            roc_auc=roc_auc
+                        )
+                        
+                        # Collect the experiment using the experiment collector
+                        experiment_id = self.collector.collect_experiment(
+                            session_id=self.current_session_id,
+                            current_query_position=current_context.query_position,
+                            target_query_position=future_context.query_position,
+                            recommender_name=recommender_name,
+                            current_query_context=current_context,
+                            target_query_context=future_context,
+                            recommendation_result=rec_result,
+                            actual_results=future_results,
+                            evaluation_result=eval_result,
+                            recommender_config=self.recommender_config,
+                            execution_time=execution_time
+                        )
+                        
+                        result_info = {
+                            "experiment_id": experiment_id,
+                            "execution_time": execution_time,
+                            "recommendation_count": len(recommendations),
+                            "overlap_accuracy": overlap_accuracy,
+                            "precision": precision,
+                            "recall": recall,
+                            "f1_score": f1,
+                            "roc_auc": roc_auc,
+                            "expansion_info": expansion_info
+                        }
+                        
+                        pair_info["results"][recommender_name] = result_info
+                        successful_experiments += 1
+                        
+                        logger.debug(f"Gap {gap}, {recommender_name}: accuracy={overlap_accuracy:.3f}, "
+                                   f"precision={precision:.3f}, recall={recall:.3f}, time={execution_time:.2f}s")
+                        
+                    except Exception as e:
+                        logger.error(f"Error testing {recommender_name} on gap {gap}: {e}")
+                        pair_info["results"][recommender_name] = {"error": str(e)}
+                
+                gap_results["query_pairs"].append(pair_info)
+            
+            # Calculate average metrics for this gap
+            for recommender_name in test_recommenders.keys():
+                metrics = []
+                for pair in gap_results["query_pairs"]:
+                    if recommender_name in pair["results"] and "error" not in pair["results"][recommender_name]:
+                        metrics.append(pair["results"][recommender_name])
+                
+                if metrics:
+                    avg_metrics = {
+                        "count": len(metrics),
+                        "avg_accuracy": np.mean([m["overlap_accuracy"] for m in metrics]),
+                        "avg_precision": np.mean([m["precision"] for m in metrics]),
+                        "avg_recall": np.mean([m["recall"] for m in metrics]),
+                        "avg_f1": np.mean([m["f1_score"] for m in metrics]),
+                        "avg_execution_time": np.mean([m["execution_time"] for m in metrics]),
+                        "total_recommendations": sum([m["recommendation_count"] for m in metrics])
+                    }
+                    
+                    if recommender_name == 'query_expansion':
+                        # Additional expansion-specific metrics
+                        expansion_metrics = [m["expansion_info"] for m in metrics if m["expansion_info"]]
+                        if expansion_metrics:
+                            avg_metrics.update({
+                                "avg_queries_executed": np.mean([e["queries_executed"] for e in expansion_metrics]),
+                                "total_expansion_queries": sum([e["queries_executed"] for e in expansion_metrics])
+                            })
+                    
+                    gap_results["average_metrics"][recommender_name] = avg_metrics
+            
+            gap_analysis_results["gap_results"][gap] = gap_results
+        
+        # Create performance summary
+        gap_analysis_results["performance_summary"] = {
+            "total_experiments": total_experiments,
+            "successful_experiments": successful_experiments,
+            "success_rate": successful_experiments / total_experiments if total_experiments > 0 else 0,
+            "recommenders_tested": list(test_recommenders.keys())
+        }
+        
+        # Add gap-wise performance trends
+        gap_performance = {}
+        for recommender_name in test_recommenders.keys():
+            performance_by_gap = {}
+            for gap, gap_result in gap_analysis_results["gap_results"].items():
+                if recommender_name in gap_result["average_metrics"]:
+                    metrics = gap_result["average_metrics"][recommender_name]
+                    performance_by_gap[gap] = {
+                        "accuracy": metrics["avg_accuracy"],
+                        "precision": metrics["avg_precision"],
+                        "recall": metrics["avg_recall"],
+                        "f1": metrics["avg_f1"]
+                    }
+            gap_performance[recommender_name] = performance_by_gap
+        
+        gap_analysis_results["gap_performance_trends"] = gap_performance
+        
+        logger.info(f"Query Expansion gap analysis completed: {successful_experiments}/{total_experiments} successful")
+        logger.info(f"Results stored in experiment session: {exp_session_id}")
+        
+        return gap_analysis_results
+
 
 class TimeoutError(Exception):
     pass
+
+
+def run_query_expansion_experiment():
+    """Run a focused experiment on the Query Expansion Recommender with real data."""
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    output_dir = f"results/experiment/query_expansion_test_{timestamp}"
+    
+    runner = RecommenderExperimentRunner(
+        output_dir=output_dir,
+        enable_full_tuple_storage=True,
+        enable_state_tracking=False
+    )
+    
+    # Get session statistics
+    session_stats = runner.get_session_statistics()
+    logger.info("Session Statistics:")
+    logger.info(f"  Total sessions: {session_stats['total_sessions']}")
+    logger.info(f"  Sessions with multiple queries: {session_stats['sessions_with_multiple_queries']}")
+    
+    if session_stats['total_sessions'] == 0:
+        logger.error("No sessions found in dataset")
+        return
+    
+    # Use the first session for testing
+    sessions = runner.dataloader.get_sessions()
+    test_session = sessions[0]
+    
+    logger.info(f"Running Query Expansion experiment on session {test_session}")
+    
+    # Run the focused gap analysis
+    results = runner.run_query_expansion_gap_analysis(
+        session_id=test_session,
+        max_gap=5,  # Test gaps 1-5
+        focus_on_expansion=True  # Only test QueryExpansionRecommender
+    )
+    
+    if "error" in results:
+        logger.error(f"Experiment failed: {results['error']}")
+        return
+    
+    # Print detailed results
+    logger.info("=" * 60)
+    logger.info("QUERY EXPANSION RECOMMENDER - GAP ANALYSIS RESULTS")
+    logger.info("=" * 60)
+    
+    logger.info(f"Session ID: {results['session_id']}")
+    logger.info(f"Total Queries: {results['total_queries']}")
+    logger.info(f"Max Gap Tested: {results['max_gap_tested']}")
+    logger.info(f"Success Rate: {results['performance_summary']['success_rate']:.1%}")
+    
+    # Performance by gap
+    logger.info("\nPerformance by Gap:")
+    logger.info("-" * 40)
+    
+    for gap in sorted(results['gap_results'].keys()):
+        gap_data = results['gap_results'][gap]
+        if 'query_expansion' in gap_data['average_metrics']:
+            metrics = gap_data['average_metrics']['query_expansion']
+            logger.info(f"Gap {gap}: "
+                       f"Accuracy={metrics['avg_accuracy']:.3f}, "
+                       f"Precision={metrics['avg_precision']:.3f}, "
+                       f"Recall={metrics['avg_recall']:.3f}, "
+                       f"F1={metrics['avg_f1']:.3f}")
+            
+            if 'avg_queries_executed' in metrics:
+                logger.info(f"        "
+                           f"Avg Expansion Queries={metrics['avg_queries_executed']:.1f}, "
+                           f"Recommendations={metrics['total_recommendations']}")
+    
+    # Detailed expansion information
+    logger.info("\nExpansion Query Details:")
+    logger.info("-" * 40)
+    
+    expansion_query_counts = []
+    sample_queries = []
+    
+    for gap, gap_data in results['gap_results'].items():
+        for pair in gap_data['query_pairs']:
+            if 'query_expansion' in pair['results']:
+                result = pair['results']['query_expansion']
+                if 'expansion_info' in result and result['expansion_info']:
+                    expansion_info = result['expansion_info']
+                    expansion_query_counts.append(expansion_info['queries_executed'])
+                    
+                    # Collect sample queries (first few)
+                    if len(sample_queries) < 3:
+                        sample_queries.extend(expansion_info['executed_queries'][:2])
+    
+    if expansion_query_counts:
+        logger.info(f"Expansion queries per recommendation:")
+        logger.info(f"  Min: {min(expansion_query_counts)}")
+        logger.info(f"  Max: {max(expansion_query_counts)}")
+        logger.info(f"  Average: {np.mean(expansion_query_counts):.1f}")
+        
+        if sample_queries:
+            logger.info("\nSample Expansion Queries:")
+            for i, query in enumerate(sample_queries[:3]):
+                logger.info(f"  {i+1}. {query[:100]}...")
+    
+    # Performance trends
+    if 'query_expansion' in results['gap_performance_trends']:
+        trends = results['gap_performance_trends']['query_expansion']
+        logger.info("\nPerformance Trends:")
+        logger.info("-" * 40)
+        
+        gaps = sorted(trends.keys())
+        accuracies = [trends[gap]['accuracy'] for gap in gaps]
+        
+        if len(accuracies) > 1:
+            trend = "improving" if accuracies[-1] > accuracies[0] else "declining"
+            logger.info(f"Accuracy trend across gaps: {trend}")
+            logger.info(f"  Gap 1: {accuracies[0]:.3f} -> Gap {gaps[-1]}: {accuracies[-1]:.3f}")
+    
+    logger.info(f"\nResults stored in: {runner.collector.base_output_dir}")
+    logger.info("Query Expansion experiment completed successfully!")
 
 
 def main():
@@ -1047,7 +1656,7 @@ def run_single_session_test():
         logger.error("No sessions found in dataset", exc_info=True)
         return
     
-    session_id = sessions[0]
+    session_id = sessions[2]
     logger.info(f"Running single-session test on session {session_id}")
     
     # Run enhanced experiments
@@ -1077,7 +1686,15 @@ def run_single_session_test():
 if __name__ == "__main__":
     import sys
     
-    if len(sys.argv) > 1 and sys.argv[1] == "single":
-        run_single_session_test()
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "single":
+            run_single_session_test()
+        elif sys.argv[1] == "query_expansion":
+            run_query_expansion_experiment()
+        else:
+            print("Usage: python recommender_experiments.py [single|query_expansion]")
+            print("  single: Run single-session test")
+            print("  query_expansion: Run Query Expansion Recommender gap analysis")
+            print("  (no args): Run full multi-session experiments")
     else:
         main()
