@@ -1,0 +1,89 @@
+num_records: 5000
+random_seed: 42  # For reproducibility
+
+# Define numeric features
+numeric_features:
+  price:
+    distribution: lognormal
+    params:
+      mean: 3
+      sigma: 0.7  # Creates prices mostly between $10-$50
+  quantity:
+    distribution: poisson
+    params:
+      lambda: 3  # Most orders have 1-5 items
+  discount_pct:
+    distribution: uniform
+    params:
+      low: 0
+      high: 0.4  # Discounts between 0-40%
+  customer_satisfaction:
+    distribution: normal
+    params:
+      mean: 4.2
+      std: 0.8  # Rating on a 1-5 scale
+
+# Define categorical features
+categorical_features:
+  payment_method:
+    categories: ['Credit Card', 'PayPal', 'Bank Transfer', 'Crypto']
+    distribution: weighted
+    params:
+      weights: [0.6, 0.25, 0.1, 0.05]  # Credit card most common
+  shipping_type:
+    categories: ['Standard', 'Express', 'Next Day']
+    distribution: weighted
+    params:
+      weights: [0.7, 0.2, 0.1]  # Standard shipping most common
+
+# Define datetime features
+datetime_features:
+  order_date:
+    start_date: '2022-01-01'
+    end_date: '2023-12-31'
+    distribution: seasonal  # Create seasonal pattern in orders
+    params:
+      period: 31557600  # 1 year in seconds (365.25 * 24 * 3600)
+      amplitude: 0.3  # Strength of seasonality
+  delivery_date:
+    start_date: '2022-01-02'
+    end_date: '2024-01-15'
+    distribution: normal  # Delivery dates normally distributed
+
+# Define hierarchical features
+hierarchical_features:
+  product_hierarchy:
+    type: product
+    categories: ['Electronics', 'Clothing', 'Home', 'Food']
+    category_weights: [0.4, 0.3, 0.2, 0.1]
+    category_to_subcategories:
+      Electronics: ['Computers', 'Phones', 'TVs', 'Audio']
+      Clothing: ['Men', 'Women', 'Children', 'Accessories']
+      Home: ['Furniture', 'Kitchen', 'Decor', 'Garden']
+      Food: ['Fresh', 'Frozen', 'Canned', 'Snacks']
+  location_hierarchy:
+    type: geography
+    countries: ['USA', 'Canada', 'UK', 'Germany', 'France']
+    country_weights: [0.5, 0.2, 0.15, 0.1, 0.05]
+    country_to_regions:
+      USA: ['California', 'Texas', 'New York', 'Florida', 'Illinois']
+      Canada: ['Ontario', 'Quebec', 'British Columbia', 'Alberta']
+      UK: ['England', 'Scotland', 'Wales', 'Northern Ireland']
+      Germany: ['Bavaria', 'Berlin', 'Hesse', 'Saxony']
+      France: ['Île-de-France', 'Provence', 'Normandy', 'Brittany']
+
+# Define sparsity (missing values)
+sparsity:
+  global: 0
+  features:
+    customer_satisfaction: 0  # 20% of satisfaction ratings missing
+    discount_pct: 0  # 5% of discounts missing
+
+# Define correlations between features
+correlations:
+  - feature1: price
+    feature2: customer_satisfaction
+    level: -0.3  # Higher prices slightly correlate with lower satisfaction
+  - feature1: price
+    feature2: discount_pct
+    level: 0.4  # Higher-priced items tend to have bigger discounts
