@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 
-from query_data_predictor.recommenders.random_table_recommender import RandomTableRecommender, TableInfo
+from query_data_predictor.recommender.random_table_recommender import RandomTableRecommender, TableInfo
 from query_data_predictor.query_runner import QueryRunner
 
 
