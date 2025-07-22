@@ -19,6 +19,8 @@ from datetime import datetime
 import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib
+import os
+import glob
 matplotlib.use('Agg')  # Use non-interactive backend
 
 from experiment_collector import ExperimentCollector
@@ -32,6 +34,107 @@ class ExperimentAnalyzer:
     and comprehensive statistical analysis.
     """
     
+    @staticmethod
+    def find_most_recent_experiment_dir(base_results_dir: str = "results/experiment") -> Optional[str]:
+        """
+        Find the most recent experiment directory by parsing timestamps in directory names.
+        
+        Args:
+            base_results_dir: Base directory containing experiment results
+            
+        Returns:
+            Path to the most recent experiment directory, or None if none found
+        """
+        base_path = Path(base_results_dir)
+        if not base_path.exists():
+            logger.error(f"Results directory not found: {base_results_dir}")
+            return None
+        
+        # Get all subdirectories
+        experiment_dirs = [d for d in base_path.iterdir() if d.is_dir()]
+        
+        if not experiment_dirs:
+            logger.error(f"No experiment directories found in {base_results_dir}")
+            return None
+        
+        # Parse timestamps from directory names and find the most recent
+        most_recent_dir = None
+        most_recent_time = None
+        
+        for exp_dir in experiment_dirs:
+            dir_name = exp_dir.name
+            
+            # Look for timestamp patterns like YYYYMMDD_HHMMSS
+            timestamp_patterns = [
+                r'(\d{8}_\d{6})',  # YYYYMMDD_HHMMSS
+                r'(\d{4}\d{2}\d{2}_\d{2}\d{2}\d{2})',  # Alternative format
+            ]
+            
+            import re
+            timestamp_str = None
+            for pattern in timestamp_patterns:
+                match = re.search(pattern, dir_name)
+                if match:
+                    timestamp_str = match.group(1)
+                    break
+            
+            if timestamp_str:
+                try:
+                    # Parse the timestamp
+                    if '_' in timestamp_str:
+                        date_part, time_part = timestamp_str.split('_')
+                        timestamp = datetime.strptime(f"{date_part}_{time_part}", "%Y%m%d_%H%M%S")
+                    else:
+                        # Alternative parsing if needed
+                        timestamp = datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S")
+                    
+                    if most_recent_time is None or timestamp > most_recent_time:
+                        most_recent_time = timestamp
+                        most_recent_dir = exp_dir
+                        
+                except ValueError as e:
+                    logger.debug(f"Could not parse timestamp from {dir_name}: {e}")
+                    continue
+        
+        if most_recent_dir:
+            logger.info(f"Found most recent experiment directory: {most_recent_dir}")
+            return str(most_recent_dir)
+        else:
+            # Fallback: use the most recently modified directory
+            logger.warning("No timestamped directories found, using most recently modified")
+            most_recent_dir = max(experiment_dirs, key=lambda d: d.stat().st_mtime)
+            logger.info(f"Using most recently modified directory: {most_recent_dir}")
+            return str(most_recent_dir)
+    
+    @classmethod
+    def create_from_most_recent(cls, 
+                               base_results_dir: str = "results/experiment",
+                               include_tuple_analysis: bool = False) -> 'ExperimentAnalyzer':
+        """
+        Create an analyzer instance using the most recent experiment directory.
+        
+        Args:
+            base_results_dir: Base directory containing experiment results
+            include_tuple_analysis: Whether to load and analyze actual tuple data
+            
+        Returns:
+            ExperimentAnalyzer instance configured with the most recent experiment
+            
+        Raises:
+            ValueError: If no experiment directories are found
+        """
+        most_recent_dir = cls.find_most_recent_experiment_dir(base_results_dir)
+        
+        if most_recent_dir is None:
+            raise ValueError(f"No experiment directories found in {base_results_dir}")
+        
+        logger.info(f"Using most recent experiment directory: {Path(most_recent_dir).name}")
+        
+        return cls(
+            experiment_data_dir=most_recent_dir,
+            include_tuple_analysis=include_tuple_analysis
+        )
+
     def __init__(self, 
                  experiment_data_dir: str,
                  output_dir: str = None,
@@ -475,12 +578,18 @@ class ExperimentAnalyzer:
                 for rec in recommenders
             ]
             
-            if all(len(group) > 1 for group in groups):
-                f_stat, p_value = stats.f_oneway(*groups)
+            # Need at least 2 groups with at least 2 samples each for ANOVA
+            valid_groups = [group for group in groups if len(group) > 1]
+            if len(valid_groups) >= 2:
+                f_stat, p_value = stats.f_oneway(*valid_groups)
                 metric_tests["anova"] = {
                     "f_statistic": float(f_stat),
                     "p_value": float(p_value),
                     "significant": p_value < 0.05
+                }
+            else:
+                metric_tests["anova"] = {
+                    "error": f"Insufficient data for ANOVA (need at least 2 groups with >1 sample each, got {len(valid_groups)} valid groups)"
                 }
             
             all_tests[metric_name] = metric_tests
@@ -851,7 +960,10 @@ class ExperimentAnalyzer:
             ("execution_time_analysis", self._create_execution_time_analysis),
             ("performance_heatmap", self._create_performance_heatmap),
             ("distribution_analysis", self._create_distribution_analysis),
-            ("correlation_analysis", self._create_correlation_analysis)
+            ("correlation_analysis", self._create_correlation_analysis),
+            ("tuple_count_analysis", self._create_tuple_count_analysis),
+            ("normalized_performance_comparison", self._create_normalized_performance_comparison),
+            ("normalized_gap_analysis", self._create_normalized_gap_analysis)
         ]
         
         figures = []
@@ -1019,6 +1131,21 @@ class ExperimentAnalyzer:
                         <h3>Execution Time Analysis</h3>
                         <p>Performance timing analysis and efficiency metrics</p>
                         <a href="execution_time_analysis.png">View PNG</a>
+                    </div>
+                    <div class="viz-item">
+                        <h3>Tuple Count Analysis</h3>
+                        <p>Analysis of the number of tuples recommended by each system</p>
+                        <a href="tuple_count_analysis.png">View PNG</a>
+                    </div>
+                    <div class="viz-item">
+                        <h3>Normalized Performance Comparison</h3>
+                        <p>Performance metrics normalized by number of tuples recommended</p>
+                        <a href="normalized_performance_comparison.png">View PNG</a>
+                    </div>
+                    <div class="viz-item">
+                        <h3>Normalized Gap Analysis</h3>
+                        <p>Gap analysis with metrics normalized by tuple count</p>
+                        <a href="normalized_gap_analysis.png">View PNG</a>
                     </div>
                 </div>
             </div>
@@ -1706,27 +1833,295 @@ class ExperimentAnalyzer:
         plt.tight_layout()
         return fig
     
-        colors = plt.cm.Set3(np.linspace(0, 1, len(recommender_means)))
-        for idx, (recommender, means) in enumerate(recommender_means.items()):
-            values = means + means[:1]  # Complete the circle
-            ax.plot(angles, values, 'o-', linewidth=2, label=recommender, color=colors[idx])
-            ax.fill(angles, values, alpha=0.25, color=colors[idx])
+    def _create_tuple_count_analysis(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
+        """Create detailed analysis of the number of tuples recommended by each recommender."""
+        if 'rec_predicted_count' not in self.results_df.columns:
+            return None
         
-        # Customize the radar chart
-        ax.set_xticks(angles[:-1])
-        ax.set_xticklabels(metric_names)
-        ax.set_ylim(0, 1)
-        ax.set_title('Multi-Metric Performance Radar', pad=20, fontsize=14, fontweight='bold')
-        ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0))
-        ax.grid(True)
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=figsize)
+        fig.suptitle('Recommended Tuple Count Analysis', fontsize=16, fontweight='bold')
+        
+        # 1. Distribution of tuple counts by recommender
+        sns.boxplot(data=self.results_df, x='meta_recommender_name', y='rec_predicted_count', ax=ax1)
+        ax1.set_title('A) Tuple Count Distribution by Recommender')
+        ax1.set_xlabel('Recommender System')
+        ax1.set_ylabel('Number of Recommended Tuples')
+        ax1.tick_params(axis='x', rotation=45)
+        
+        # Add mean values as annotations
+        means = self.results_df.groupby('meta_recommender_name')['rec_predicted_count'].mean()
+        for i, (recommender, mean_val) in enumerate(means.items()):
+            ax1.text(i, ax1.get_ylim()[1] * 0.95, f'μ={mean_val:.1f}', 
+                    ha='center', va='top', fontweight='bold', fontsize=9)
+        
+        # 2. Tuple count vs gap (if available)
+        if 'meta_gap' in self.results_df.columns:
+            gap_analysis = self.results_df.groupby(['meta_recommender_name', 'meta_gap']).agg({
+                'rec_predicted_count': ['mean', 'std', 'count']
+            }).reset_index()
+            gap_analysis.columns = ['recommender', 'gap', 'mean_count', 'std_count', 'n_samples']
+            
+            for recommender in gap_analysis['recommender'].unique():
+                data = gap_analysis[gap_analysis['recommender'] == recommender]
+                ax2.errorbar(data['gap'], data['mean_count'], yerr=data['std_count'], 
+                            label=recommender, marker='o', linewidth=2, markersize=6)
+            
+            ax2.set_title('B) Mean Tuple Count vs Query Gap')
+            ax2.set_xlabel('Query Gap')
+            ax2.set_ylabel('Mean Number of Tuples')
+            ax2.legend()
+            ax2.grid(True, alpha=0.3)
+        else:
+            ax2.text(0.5, 0.5, 'Gap data not available', ha='center', va='center', 
+                    transform=ax2.transAxes, fontsize=12)
+            ax2.set_title('B) Mean Tuple Count vs Query Gap')
+        
+        # 3. Histogram of tuple counts
+        recommenders = self.results_df['meta_recommender_name'].unique()
+        colors = plt.cm.tab10(np.linspace(0, 1, len(recommenders)))
+        
+        for i, recommender in enumerate(recommenders):
+            data = self.results_df[self.results_df['meta_recommender_name'] == recommender]['rec_predicted_count']
+            ax3.hist(data, alpha=0.6, label=recommender, bins=20, color=colors[i])
+        
+        ax3.set_title('C) Tuple Count Distribution')
+        ax3.set_xlabel('Number of Recommended Tuples')
+        ax3.set_ylabel('Frequency')
+        ax3.legend()
+        ax3.grid(True, alpha=0.3)
+        
+        # 4. Summary statistics table as text
+        stats_text = "D) Summary Statistics:\n\n"
+        for recommender in recommenders:
+            data = self.results_df[self.results_df['meta_recommender_name'] == recommender]['rec_predicted_count']
+            stats_text += f"{recommender}:\n"
+            stats_text += f"  Mean: {data.mean():.1f}\n"
+            stats_text += f"  Median: {data.median():.1f}\n"
+            stats_text += f"  Std: {data.std():.1f}\n"
+            stats_text += f"  Min: {data.min():.0f}\n"
+            stats_text += f"  Max: {data.max():.0f}\n\n"
+        
+        ax4.text(0.05, 0.95, stats_text, transform=ax4.transAxes, fontsize=10,
+                verticalalignment='top', fontfamily='monospace')
+        ax4.set_xlim(0, 1)
+        ax4.set_ylim(0, 1)
+        ax4.axis('off')
+        ax4.set_title('D) Summary Statistics')
+        
+        plt.tight_layout()
+        return fig
+    
+    def _create_normalized_performance_comparison(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
+        """Create performance comparison with metrics normalized by number of tuples recommended."""
+        if 'rec_predicted_count' not in self.results_df.columns:
+            return None
+        
+        # Check which metrics are available
+        available_metrics = []
+        metric_names = {
+            'eval_overlap_accuracy': 'Accuracy',
+            'eval_precision': 'Precision', 
+            'eval_recall': 'Recall',
+            'eval_f1_score': 'F1 Score',
+            'eval_roc_auc': 'ROC-AUC'
+        }
+        
+        for metric_col, metric_name in metric_names.items():
+            if metric_col in self.results_df.columns:
+                available_metrics.append((metric_col, metric_name))
+        
+        if not available_metrics:
+            return None
+        
+        # Calculate normalized metrics (metric per tuple recommended)
+        normalized_df = self.results_df.copy()
+        for metric_col, metric_name in available_metrics:
+            # Add small epsilon to avoid division by zero
+            normalized_df[f'norm_{metric_col}'] = normalized_df[metric_col] / (normalized_df['rec_predicted_count'] + 1e-6)
+        
+        # Determine grid size based on available metrics
+        n_metrics = len(available_metrics)
+        if n_metrics <= 2:
+            rows, cols = 1, n_metrics
+        elif n_metrics <= 4:
+            rows, cols = 2, 2
+        else:
+            rows, cols = 2, 3
+        
+        fig, axes = plt.subplots(rows, cols, figsize=(cols * 6, rows * 5))
+        fig.suptitle('Performance Metrics Normalized by Tuple Count', fontsize=16, fontweight='bold')
+        
+        # Handle single subplot case
+        if n_metrics == 1:
+            axes = [axes]
+        elif rows == 1:
+            axes = axes if isinstance(axes, list) else [axes]
+        else:
+            axes = axes.flatten()
+        
+        # Create box plots for each available normalized metric
+        for idx, (metric_col, metric_name) in enumerate(available_metrics):
+            ax = axes[idx]
+            norm_col = f'norm_{metric_col}'
+            
+            # Box plot comparison
+            sns.boxplot(data=normalized_df, x='meta_recommender_name', 
+                       y=norm_col, ax=ax)
+            ax.set_title(f'{chr(65 + idx)}) {metric_name} per Tuple by Recommender')
+            ax.set_xlabel('Recommender System')
+            ax.set_ylabel(f'{metric_name} per Tuple')
+            ax.tick_params(axis='x', rotation=45)
+            
+            # Add mean values as text annotations
+            means = normalized_df.groupby('meta_recommender_name')[norm_col].mean()
+            for i, (recommender, mean_val) in enumerate(means.items()):
+                ax.text(i, ax.get_ylim()[1] * 0.95, f'μ={mean_val:.4f}', 
+                       ha='center', va='top', fontweight='bold', fontsize=9)
+        
+        # Hide unused subplots
+        for idx in range(n_metrics, len(axes)):
+            axes[idx].set_visible(False)
+        
+        plt.tight_layout()
+        return fig
+    
+    def _create_normalized_gap_analysis(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
+        """Create gap analysis with metrics normalized by number of tuples recommended."""
+        if 'meta_gap' not in self.results_df.columns or 'rec_predicted_count' not in self.results_df.columns:
+            return None
+        
+        # Find available metrics
+        available_metrics = []
+        metric_names = {
+            'eval_overlap_accuracy': 'Accuracy',
+            'eval_precision': 'Precision', 
+            'eval_recall': 'Recall',
+            'eval_f1_score': 'F1 Score',
+            'eval_roc_auc': 'ROC-AUC'
+        }
+        
+        for metric_col, metric_name in metric_names.items():
+            if metric_col in self.results_df.columns:
+                available_metrics.append((metric_col, metric_name))
+        
+        if not available_metrics:
+            return None
+        
+        # Calculate normalized metrics
+        normalized_df = self.results_df.copy()
+        for metric_col, metric_name in available_metrics:
+            normalized_df[f'norm_{metric_col}'] = normalized_df[metric_col] / (normalized_df['rec_predicted_count'] + 1e-6)
+        
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=figsize)
+        fig.suptitle('Normalized Performance vs Query Gap Analysis', fontsize=16, fontweight='bold')
+        
+        # 1. Line plot - First available normalized metric vs gap
+        if available_metrics:
+            metric_col, metric_name = available_metrics[0]
+            norm_col = f'norm_{metric_col}'
+            
+            gap_analysis = normalized_df.groupby(['meta_recommender_name', 'meta_gap']).agg({
+                norm_col: ['mean', 'std', 'count']
+            }).reset_index()
+            gap_analysis.columns = ['recommender', 'gap', 'mean_metric', 'std_metric', 'count']
+            
+            for recommender in gap_analysis['recommender'].unique():
+                data = gap_analysis[gap_analysis['recommender'] == recommender]
+                ax1.errorbar(data['gap'], data['mean_metric'], yerr=data['std_metric'], 
+                            label=recommender, marker='o', linewidth=2, markersize=6)
+            
+            ax1.set_title(f'A) {metric_name} per Tuple vs Query Gap')
+            ax1.set_xlabel('Query Gap')
+            ax1.set_ylabel(f'Mean {metric_name} per Tuple')
+            ax1.legend()
+            ax1.grid(True, alpha=0.3)
+        
+        # 2. Heatmap of normalized primary metric by recommender and gap
+        if available_metrics:
+            metric_col, metric_name = available_metrics[0]
+            norm_col = f'norm_{metric_col}'
+            
+            heatmap_data = normalized_df.pivot_table(
+                values=norm_col, 
+                index='meta_recommender_name', 
+                columns='meta_gap', 
+                aggfunc='mean'
+            )
+            
+            sns.heatmap(heatmap_data, annot=True, fmt='.4f', cmap='RdYlGn', 
+                       ax=ax2, cbar_kws={'label': f'Mean {metric_name} per Tuple'})
+            ax2.set_title(f'B) {metric_name} per Tuple Heatmap')
+            ax2.set_xlabel('Query Gap')
+            ax2.set_ylabel('Recommender System')
+        
+        # 3. Comparison of raw vs normalized for first metric
+        if available_metrics:
+            metric_col, metric_name = available_metrics[0]
+            norm_col = f'norm_{metric_col}'
+            
+            # Calculate means for each recommender
+            raw_means = normalized_df.groupby('meta_recommender_name')[metric_col].mean()
+            norm_means = normalized_df.groupby('meta_recommender_name')[norm_col].mean()
+            
+            x = np.arange(len(raw_means))
+            width = 0.35
+            
+            ax3.bar(x - width/2, raw_means.values, width, label=f'Raw {metric_name}', alpha=0.7)
+            
+            # Scale normalized values for visualization (multiply by mean tuple count)
+            mean_tuple_count = normalized_df['rec_predicted_count'].mean()
+            scaled_norm_means = norm_means * mean_tuple_count
+            ax3.bar(x + width/2, scaled_norm_means.values, width, 
+                   label=f'{metric_name} per Tuple (×{mean_tuple_count:.0f})', alpha=0.7)
+            
+            ax3.set_title(f'C) Raw vs Normalized {metric_name} Comparison')
+            ax3.set_xlabel('Recommender System')
+            ax3.set_ylabel(metric_name)
+            ax3.set_xticks(x)
+            ax3.set_xticklabels(raw_means.index, rotation=45)
+            ax3.legend()
+            ax3.grid(True, alpha=0.3)
+        
+        # 4. Efficiency scatter plot (normalized metric vs tuple count)
+        if available_metrics:
+            metric_col, metric_name = available_metrics[0]
+            norm_col = f'norm_{metric_col}'
+            
+            sns.scatterplot(data=normalized_df, x='rec_predicted_count', y=norm_col, 
+                           hue='meta_recommender_name', ax=ax4, alpha=0.7, s=60)
+            ax4.set_title(f'D) {metric_name} Efficiency vs Tuple Count')
+            ax4.set_xlabel('Number of Recommended Tuples')
+            ax4.set_ylabel(f'{metric_name} per Tuple')
+            ax4.legend(title='Recommender', bbox_to_anchor=(1.05, 1), loc='upper left')
+            ax4.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        return fig
 
 
 def main():
     """Example usage of the enhanced analyzer with publication visualizations."""
+    import sys
     
-    # Initialize analyzer with global output directory
+    # Allow optional command-line argument for custom results directory
+    base_results_dir = "results/experiment"
+    if len(sys.argv) > 1:
+        base_results_dir = sys.argv[1]
+        print(f"📁 Using custom results directory: {base_results_dir}")
+    
+    # Find the most recent experiment directory automatically
+    most_recent_dir = ExperimentAnalyzer.find_most_recent_experiment_dir(base_results_dir)
+    
+    if most_recent_dir is None:
+        print(f"❌ No experiment directories found in {base_results_dir}")
+        print("💡 Usage: python experiment_analyzer.py [results_directory]")
+        return
+    
+    print(f"🔍 Analyzing most recent experiment: {Path(most_recent_dir).name}")
+    
+    # Initialize analyzer with the most recent directory
     analyzer = ExperimentAnalyzer(
-        experiment_data_dir="results/experiment/single_session_test_20250715_130810",
+        experiment_data_dir=most_recent_dir,
         include_tuple_analysis=False
     )
     
