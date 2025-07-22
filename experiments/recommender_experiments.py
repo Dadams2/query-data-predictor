@@ -43,12 +43,16 @@ except ImportError:
 from query_data_predictor.dataloader import DataLoader
 from query_data_predictor.query_result_sequence import QueryResultSequence
 from query_data_predictor.metrics import EvaluationMetrics
-from query_data_predictor.recommenders import (
+from query_data_predictor.recommender import (
     DummyRecommender,
     RandomRecommender,
     ClusteringRecommender,
     InterestingnessRecommender,
-    QueryExpansionRecommender
+    QueryExpansionRecommender,
+    RandomTableRecommender,
+    SimilarityRecommender,
+    FrequencyRecommender,
+    SamplingRecommender
 )
 from query_data_predictor.query_runner import QueryRunner
 
@@ -329,28 +333,38 @@ class RecommenderExperimentRunner:
     
     def _initialize_recommenders(self) -> Dict[str, Any]:
         """Initialize all recommender instances."""
-        # Create a real data QueryRunner for QueryExpansionRecommender
+        # Create a real data QueryRunner for QueryExpansionRecommender and RandomTableRecommender
         # Use the first available session as the data source
         sessions = self.dataloader.get_sessions()
         if sessions:
             # Use the first session as the data source for expansion queries
             first_session = sessions[0]
             real_query_runner = RealDataQueryRunner(self.dataloader, first_session)
-            logger.info(f"Using session {first_session} as data source for QueryExpansionRecommender")
+            logger.info(f"Using session {first_session} as data source for out-of-results recommenders")
         else:
             # Fallback to mock if no sessions available
             real_query_runner = MockQueryRunner()
-            logger.warning("No sessions available, using mock data for QueryExpansionRecommender")
+            logger.warning("No sessions available, using mock data for out-of-results recommenders")
         
         return {
+            # Out-of-results recommenders (need QueryRunner)
+            'query_expansion': QueryExpansionRecommender(
+                self.recommender_config, 
+                query_runner=real_query_runner
+            ),
+            'random_table_baseline': RandomTableRecommender(
+                self.recommender_config,
+                query_runner=real_query_runner
+            ),
+            
+            # In-results recommenders (work with current results only)
             'dummy': DummyRecommender(self.recommender_config),
             'random': RandomRecommender(self.recommender_config),
             'clustering': ClusteringRecommender(self.recommender_config),
             'interestingness': InterestingnessRecommender(self.recommender_config),
-            'query_expansion': QueryExpansionRecommender(
-                self.recommender_config, 
-                query_runner=real_query_runner
-            )
+            'similarity': SimilarityRecommender(self.recommender_config),
+            'frequency': FrequencyRecommender(self.recommender_config),
+            'sampling': SamplingRecommender(self.recommender_config)
         }
     
     def run_enhanced_experiment(self, 
@@ -1181,20 +1195,20 @@ class RecommenderExperimentRunner:
         import hashlib
         return hashlib.md5(s.encode()).hexdigest()[:16]
 
-    def run_query_expansion_gap_analysis(self, 
-                                       session_id: Optional[str] = None,
-                                       max_gap: int = 5,
-                                       focus_on_expansion: bool = True) -> Dict[str, Any]:
+    def run_comprehensive_recommender_gap_analysis(self, 
+                                                   session_id: Optional[str] = None,
+                                                   max_gap: int = 5,
+                                                   include_all_recommenders: bool = True) -> Dict[str, Any]:
         """
-        Run a focused gap analysis experiment specifically for the Query Expansion Recommender.
+        Run a comprehensive gap analysis experiment comparing all recommenders.
         
         Args:
             session_id: Specific session to analyze (uses first available if None)
             max_gap: Maximum gap between queries to test
-            focus_on_expansion: If True, only test QueryExpansionRecommender
+            include_all_recommenders: If True, test all recommenders; if False, only out-of-results methods
             
         Returns:
-            Dictionary with detailed analysis of query expansion performance
+            Dictionary with detailed analysis comparing all recommenders
         """
         # Select session
         if session_id is None:
@@ -1203,11 +1217,11 @@ class RecommenderExperimentRunner:
                 return {"error": "No sessions available"}
             session_id = sessions[0]  # Use first session
         
-        logger.info(f"Running Query Expansion gap analysis on session {session_id}")
+        logger.info(f"Running comprehensive recommender gap analysis on session {session_id}")
         
         # Start experiment session
         exp_session_id = self.collector.start_experiment_session(
-            f"query_expansion_gap_analysis_{session_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            f"comprehensive_gap_analysis_{session_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         )
         self.current_session_id = exp_session_id
         
@@ -1225,15 +1239,25 @@ class RecommenderExperimentRunner:
             "total_queries": len(query_ids),
             "max_gap_tested": min(max_gap, len(query_ids) - 1),
             "gap_results": {},
-            "expansion_details": {},
+            "recommender_details": {},
             "performance_summary": {}
         }
         
         # Select recommenders to test
-        if focus_on_expansion:
-            test_recommenders = {'query_expansion': self.recommenders['query_expansion']}
-        else:
+        if include_all_recommenders:
             test_recommenders = self.recommenders
+            logger.info(f"Testing all {len(test_recommenders)} recommenders")
+        else:
+            # Only test out-of-results methods
+            test_recommenders = {
+                'query_expansion': self.recommenders['query_expansion'],
+                'random_table_baseline': self.recommenders['random_table_baseline']
+            }
+            logger.info("Testing only out-of-results recommenders")
+        
+        # Log which recommenders we're testing
+        recommender_list = list(test_recommenders.keys())
+        logger.info(f"Recommenders to test: {', '.join(recommender_list)}")
         
         total_experiments = 0
         successful_experiments = 0
@@ -1289,18 +1313,36 @@ class RecommenderExperimentRunner:
                             recommendations, future_results, current_results
                         )
                         
-                        # For QueryExpansionRecommender, capture additional details
-                        expansion_info = {}
+                        # Capture recommender-specific details
+                        recommender_info = {}
                         if recommender_name == 'query_expansion' and hasattr(recommender, 'query_runner'):
                             query_runner = recommender.query_runner
                             if hasattr(query_runner, 'executed_queries'):
-                                expansion_info = {
+                                recommender_info = {
                                     "queries_executed": len(query_runner.executed_queries),
                                     "executed_queries": query_runner.executed_queries.copy(),
-                                    "recommendation_count": len(recommendations)
+                                    "recommendation_count": len(recommendations),
+                                    "recommender_type": "out_of_results"
                                 }
                                 # Clear executed queries for next iteration
                                 query_runner.executed_queries.clear()
+                        elif recommender_name == 'random_table_baseline' and hasattr(recommender, 'query_runner'):
+                            query_runner = recommender.query_runner
+                            if hasattr(query_runner, 'executed_queries'):
+                                recommender_info = {
+                                    "queries_executed": len(query_runner.executed_queries),
+                                    "executed_queries": query_runner.executed_queries.copy(),
+                                    "recommendation_count": len(recommendations),
+                                    "recommender_type": "out_of_results_baseline"
+                                }
+                                # Clear executed queries for next iteration
+                                query_runner.executed_queries.clear()
+                        else:
+                            # In-results recommenders
+                            recommender_info = {
+                                "recommendation_count": len(recommendations),
+                                "recommender_type": "in_results"
+                            }
                         
                         # Create contexts for collector
                         current_context = QueryContext(
@@ -1327,7 +1369,7 @@ class RecommenderExperimentRunner:
                                 "recommender_type": recommender_name,
                                 "input_size": len(current_results),
                                 "output_size": len(recommendations),
-                                "expansion_info": expansion_info
+                                "recommender_info": recommender_info
                             }
                         )
                         
@@ -1371,7 +1413,7 @@ class RecommenderExperimentRunner:
                             "recall": recall,
                             "f1_score": f1,
                             "roc_auc": roc_auc,
-                            "expansion_info": expansion_info
+                            "recommender_info": recommender_info
                         }
                         
                         pair_info["results"][recommender_name] = result_info
@@ -1404,14 +1446,18 @@ class RecommenderExperimentRunner:
                         "total_recommendations": sum([m["recommendation_count"] for m in metrics])
                     }
                     
-                    if recommender_name == 'query_expansion':
-                        # Additional expansion-specific metrics
-                        expansion_metrics = [m["expansion_info"] for m in metrics if m["expansion_info"]]
-                        if expansion_metrics:
+                    # Add recommender-specific metrics for out-of-results methods
+                    if recommender_name in ['query_expansion', 'random_table_baseline']:
+                        out_of_results_metrics = [m["recommender_info"] for m in metrics if m["recommender_info"] and "queries_executed" in m["recommender_info"]]
+                        if out_of_results_metrics:
                             avg_metrics.update({
-                                "avg_queries_executed": np.mean([e["queries_executed"] for e in expansion_metrics]),
-                                "total_expansion_queries": sum([e["queries_executed"] for e in expansion_metrics])
+                                "avg_queries_executed": np.mean([e["queries_executed"] for e in out_of_results_metrics]),
+                                "total_database_queries": sum([e["queries_executed"] for e in out_of_results_metrics]),
+                                "recommender_category": "out_of_results"
                             })
+                    else:
+                        # In-results recommenders
+                        avg_metrics["recommender_category"] = "in_results"
                     
                     gap_results["average_metrics"][recommender_name] = avg_metrics
             
@@ -1452,10 +1498,10 @@ class TimeoutError(Exception):
     pass
 
 
-def run_query_expansion_experiment():
-    """Run a focused experiment on the Query Expansion Recommender with real data."""
+def run_comprehensive_recommender_experiment():
+    """Run a comprehensive experiment comparing QueryExpansionRecommender, RandomTableRecommender, and in-results recommenders."""
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    output_dir = f"results/experiment/query_expansion_test_{timestamp}"
+    output_dir = f"results/experiment/comprehensive_recommender_test_{timestamp}"
     
     runner = RecommenderExperimentRunner(
         output_dir=output_dir,
@@ -1477,13 +1523,13 @@ def run_query_expansion_experiment():
     sessions = runner.dataloader.get_sessions()
     test_session = sessions[0]
     
-    logger.info(f"Running Query Expansion experiment on session {test_session}")
+    logger.info(f"Running comprehensive recommender experiment on session {test_session}")
     
-    # Run the focused gap analysis
-    results = runner.run_query_expansion_gap_analysis(
+    # Run the comprehensive gap analysis
+    results = runner.run_comprehensive_recommender_gap_analysis(
         session_id=test_session,
         max_gap=5,  # Test gaps 1-5
-        focus_on_expansion=True  # Only test QueryExpansionRecommender
+        include_all_recommenders=True  # Test all recommenders
     )
     
     if "error" in results:
@@ -1491,80 +1537,128 @@ def run_query_expansion_experiment():
         return
     
     # Print detailed results
-    logger.info("=" * 60)
-    logger.info("QUERY EXPANSION RECOMMENDER - GAP ANALYSIS RESULTS")
-    logger.info("=" * 60)
+    logger.info("=" * 80)
+    logger.info("COMPREHENSIVE RECOMMENDER COMPARISON - GAP ANALYSIS RESULTS")
+    logger.info("=" * 80)
     
     logger.info(f"Session ID: {results['session_id']}")
     logger.info(f"Total Queries: {results['total_queries']}")
     logger.info(f"Max Gap Tested: {results['max_gap_tested']}")
     logger.info(f"Success Rate: {results['performance_summary']['success_rate']:.1%}")
+    logger.info(f"Recommenders Tested: {', '.join(results['performance_summary']['recommenders_tested'])}")
     
-    # Performance by gap
-    logger.info("\nPerformance by Gap:")
-    logger.info("-" * 40)
+    # Performance by gap and recommender
+    logger.info("\nPerformance by Gap and Recommender:")
+    logger.info("-" * 60)
+    
+    # Organize results by recommender category
+    out_of_results_recommenders = []
+    in_results_recommenders = []
     
     for gap in sorted(results['gap_results'].keys()):
+        logger.info(f"\nGap {gap} Results:")
         gap_data = results['gap_results'][gap]
-        if 'query_expansion' in gap_data['average_metrics']:
-            metrics = gap_data['average_metrics']['query_expansion']
-            logger.info(f"Gap {gap}: "
+        
+        for recommender_name, metrics in gap_data['average_metrics'].items():
+            category = metrics.get('recommender_category', 'unknown')
+            
+            if category == 'out_of_results':
+                if recommender_name not in out_of_results_recommenders:
+                    out_of_results_recommenders.append(recommender_name)
+                marker = "🔍"  # Out-of-results methods
+            else:
+                if recommender_name not in in_results_recommenders:
+                    in_results_recommenders.append(recommender_name)
+                marker = "📊"  # In-results methods
+            
+            logger.info(f"  {marker} {recommender_name}: "
                        f"Accuracy={metrics['avg_accuracy']:.3f}, "
                        f"Precision={metrics['avg_precision']:.3f}, "
                        f"Recall={metrics['avg_recall']:.3f}, "
-                       f"F1={metrics['avg_f1']:.3f}")
+                       f"F1={metrics['avg_f1']:.3f}, "
+                       f"Time={metrics['avg_execution_time']:.3f}s")
             
+            # Additional details for out-of-results methods
             if 'avg_queries_executed' in metrics:
-                logger.info(f"        "
-                           f"Avg Expansion Queries={metrics['avg_queries_executed']:.1f}, "
+                logger.info(f"    Database Queries={metrics['avg_queries_executed']:.1f}, "
                            f"Recommendations={metrics['total_recommendations']}")
     
-    # Detailed expansion information
-    logger.info("\nExpansion Query Details:")
+    # Summary comparison
+    logger.info("\n" + "=" * 80)
+    logger.info("SUMMARY COMPARISON")
+    logger.info("=" * 80)
+    
+    logger.info(f"\nOut-of-Results Methods ({len(out_of_results_recommenders)}):")
+    for rec in out_of_results_recommenders:
+        logger.info(f"  🔍 {rec}")
+    
+    logger.info(f"\nIn-Results Methods ({len(in_results_recommenders)}):")
+    for rec in in_results_recommenders:
+        logger.info(f"  📊 {rec}")
+    
+    # Calculate overall performance averages
+    logger.info("\nOverall Performance Averages:")
     logger.info("-" * 40)
     
-    expansion_query_counts = []
-    sample_queries = []
+    all_metrics = {}
+    for gap_data in results['gap_results'].values():
+        for recommender_name, metrics in gap_data['average_metrics'].items():
+            if recommender_name not in all_metrics:
+                all_metrics[recommender_name] = []
+            all_metrics[recommender_name].append(metrics)
     
-    for gap, gap_data in results['gap_results'].items():
-        for pair in gap_data['query_pairs']:
-            if 'query_expansion' in pair['results']:
-                result = pair['results']['query_expansion']
-                if 'expansion_info' in result and result['expansion_info']:
-                    expansion_info = result['expansion_info']
-                    expansion_query_counts.append(expansion_info['queries_executed'])
-                    
-                    # Collect sample queries (first few)
-                    if len(sample_queries) < 3:
-                        sample_queries.extend(expansion_info['executed_queries'][:2])
+    # Sort by category and then by average accuracy
+    recommender_performance = []
+    for recommender_name, metrics_list in all_metrics.items():
+        avg_accuracy = np.mean([m['avg_accuracy'] for m in metrics_list])
+        avg_time = np.mean([m['avg_execution_time'] for m in metrics_list])
+        category = metrics_list[0].get('recommender_category', 'unknown')
+        
+        recommender_performance.append({
+            'name': recommender_name,
+            'category': category,
+            'avg_accuracy': avg_accuracy,
+            'avg_time': avg_time
+        })
     
-    if expansion_query_counts:
-        logger.info(f"Expansion queries per recommendation:")
-        logger.info(f"  Min: {min(expansion_query_counts)}")
-        logger.info(f"  Max: {max(expansion_query_counts)}")
-        logger.info(f"  Average: {np.mean(expansion_query_counts):.1f}")
-        
-        if sample_queries:
-            logger.info("\nSample Expansion Queries:")
-            for i, query in enumerate(sample_queries[:3]):
-                logger.info(f"  {i+1}. {query[:100]}...")
+    # Sort by category (out-of-results first) then by accuracy
+    recommender_performance.sort(key=lambda x: (x['category'] != 'out_of_results', -x['avg_accuracy']))
     
-    # Performance trends
-    if 'query_expansion' in results['gap_performance_trends']:
-        trends = results['gap_performance_trends']['query_expansion']
-        logger.info("\nPerformance Trends:")
-        logger.info("-" * 40)
-        
-        gaps = sorted(trends.keys())
-        accuracies = [trends[gap]['accuracy'] for gap in gaps]
-        
-        if len(accuracies) > 1:
-            trend = "improving" if accuracies[-1] > accuracies[0] else "declining"
-            logger.info(f"Accuracy trend across gaps: {trend}")
-            logger.info(f"  Gap 1: {accuracies[0]:.3f} -> Gap {gaps[-1]}: {accuracies[-1]:.3f}")
+    for perf in recommender_performance:
+        marker = "🔍" if perf['category'] == 'out_of_results' else "📊"
+        logger.info(f"  {marker} {perf['name']:<25} "
+                   f"Accuracy: {perf['avg_accuracy']:.3f}  "
+                   f"Time: {perf['avg_time']:.3f}s")
+    
+    # Best performers
+    logger.info("\nBest Performers:")
+    logger.info("-" * 40)
+    
+    best_overall = max(recommender_performance, key=lambda x: x['avg_accuracy'])
+    fastest = min(recommender_performance, key=lambda x: x['avg_time'])
+    
+    best_out_of_results = max([p for p in recommender_performance if p['category'] == 'out_of_results'], 
+                             key=lambda x: x['avg_accuracy'], default=None)
+    best_in_results = max([p for p in recommender_performance if p['category'] == 'in_results'], 
+                         key=lambda x: x['avg_accuracy'], default=None)
+    
+    logger.info(f"  Best Overall: {best_overall['name']} (Accuracy: {best_overall['avg_accuracy']:.3f})")
+    logger.info(f"  Fastest: {fastest['name']} (Time: {fastest['avg_time']:.3f}s)")
+    
+    if best_out_of_results:
+        logger.info(f"  Best Out-of-Results: {best_out_of_results['name']} (Accuracy: {best_out_of_results['avg_accuracy']:.3f})")
+    if best_in_results:
+        logger.info(f"  Best In-Results: {best_in_results['name']} (Accuracy: {best_in_results['avg_accuracy']:.3f})")
     
     logger.info(f"\nResults stored in: {runner.collector.base_output_dir}")
-    logger.info("Query Expansion experiment completed successfully!")
+    logger.info("Comprehensive recommender experiment completed successfully!")
+
+
+# Legacy function name for backward compatibility
+def run_query_expansion_experiment():
+    """Legacy function - now runs comprehensive experiment."""
+    logger.info("Note: run_query_expansion_experiment now runs comprehensive comparison")
+    run_comprehensive_recommender_experiment()
 
 
 def main():
@@ -1689,12 +1783,13 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         if sys.argv[1] == "single":
             run_single_session_test()
-        elif sys.argv[1] == "query_expansion":
-            run_query_expansion_experiment()
+        elif sys.argv[1] == "comprehensive" or sys.argv[1] == "query_expansion":
+            run_comprehensive_recommender_experiment()
         else:
-            print("Usage: python recommender_experiments.py [single|query_expansion]")
+            print("Usage: python recommender_experiments.py [single|comprehensive|query_expansion]")
             print("  single: Run single-session test")
-            print("  query_expansion: Run Query Expansion Recommender gap analysis")
+            print("  comprehensive: Run comprehensive recommender comparison (includes query expansion, random table baseline, and in-results methods)")
+            print("  query_expansion: Same as comprehensive (legacy alias)")
             print("  (no args): Run full multi-session experiments")
     else:
         main()

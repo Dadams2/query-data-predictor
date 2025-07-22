@@ -16,7 +16,7 @@ from query_data_predictor.dataloader import DataLoader
 from query_data_predictor.query_result_sequence import QueryResultSequence
 from query_data_predictor.config_manager import ConfigManager
 from query_data_predictor.metrics import EvaluationMetrics
-from query_data_predictor.recommenders.tuple_recommender import TupleRecommender
+from query_data_predictor.recommender.tuple_recommender import TupleRecommender
 
 
 import logging
