@@ -8,6 +8,7 @@ experimental data collected by the enhanced experiment system.
 import pandas as pd
 import numpy as np
 import json
+import re
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -234,6 +235,37 @@ class ExperimentAnalyzer:
                 df['eval_roc_auc'], 
                 bins=[0, 0.5, 0.6, 0.7, 0.8, 1.0],
                 labels=['Poor', 'Fair', 'Good', 'Very Good', 'Excellent']
+            )
+        
+        # Calculate Sensitivity and Specificity
+        # Sensitivity (TPR) = TP / (TP + FN) = recall (already available)
+        if 'eval_recall' in df.columns:
+            df['eval_sensitivity'] = df['eval_recall']  # Sensitivity is the same as recall
+        
+        # Calculate Specificity (TNR) = TN / (TN + FP)
+        # For recommendation systems: TN = total_possible - union_count, FP = predicted_count - intersection_count
+        if all(col in df.columns for col in ['eval_predicted_count', 'eval_intersection_count', 'eval_union_count', 'eval_actual_count']):
+            # Estimate total possible items as a reasonable upper bound
+            # We'll use union_count + a reasonable margin as total possible
+            df['eval_false_positives'] = df['eval_predicted_count'] - df['eval_intersection_count']
+            df['eval_true_negatives'] = df['eval_union_count'] - df['eval_predicted_count'] + df['eval_intersection_count']
+            df['eval_specificity'] = df['eval_true_negatives'] / (df['eval_true_negatives'] + df['eval_false_positives'])
+            df['eval_specificity'] = df['eval_specificity'].fillna(0.0)  # Handle division by zero
+        
+        # Create sensitivity bins
+        if 'eval_sensitivity' in df.columns:
+            df['sensitivity_bin'] = pd.cut(
+                df['eval_sensitivity'], 
+                bins=[0, 0.2, 0.4, 0.6, 0.8, 1.0],
+                labels=['Very Low', 'Low', 'Medium', 'High', 'Very High']
+            )
+        
+        # Create specificity bins
+        if 'eval_specificity' in df.columns:
+            df['specificity_bin'] = pd.cut(
+                df['eval_specificity'], 
+                bins=[0, 0.2, 0.4, 0.6, 0.8, 1.0],
+                labels=['Very Low', 'Low', 'Medium', 'High', 'Very High']
             )
         
         # Create execution time bins
@@ -494,6 +526,8 @@ class ExperimentAnalyzer:
             'eval_recall': ['mean', 'std', 'min', 'max', 'median'] if 'eval_recall' in self.results_df.columns else [],
             'eval_f1_score': ['mean', 'std', 'min', 'max', 'median'] if 'eval_f1_score' in self.results_df.columns else [],
             'eval_roc_auc': ['mean', 'std', 'min', 'max', 'median'] if 'eval_roc_auc' in self.results_df.columns else [],
+            'eval_sensitivity': ['mean', 'std', 'min', 'max', 'median'] if 'eval_sensitivity' in self.results_df.columns else [],
+            'eval_specificity': ['mean', 'std', 'min', 'max', 'median'] if 'eval_specificity' in self.results_df.columns else [],
             'meta_execution_time_seconds': ['mean', 'std'] if 'meta_execution_time_seconds' in self.results_df.columns else []
         }
         
@@ -536,7 +570,9 @@ class ExperimentAnalyzer:
             'eval_precision': 'Precision', 
             'eval_recall': 'Recall',
             'eval_f1_score': 'F1 Score',
-            'eval_roc_auc': 'ROC-AUC'
+            'eval_roc_auc': 'ROC-AUC',
+            'eval_sensitivity': 'Sensitivity',
+            'eval_specificity': 'Specificity'
         }
         
         for metric_col, metric_name in metric_names.items():
@@ -728,6 +764,8 @@ class ExperimentAnalyzer:
                         <th>Mean Recall</th>
                         <th>Mean F1 Score</th>
                         <th>Mean ROC-AUC</th>
+                        <th>Mean Sensitivity</th>
+                        <th>Mean Specificity</th>
                         <th>Execution Time (s)</th>
                     </tr>
             """
@@ -746,6 +784,8 @@ class ExperimentAnalyzer:
                 recall = perf_stats.get('eval_recall_mean', {}).get(recommender, 'N/A')
                 f1_score = perf_stats.get('eval_f1_score_mean', {}).get(recommender, 'N/A')
                 roc_auc = perf_stats.get('eval_roc_auc_mean', {}).get(recommender, 'N/A')
+                sensitivity = perf_stats.get('eval_sensitivity_mean', {}).get(recommender, 'N/A')
+                specificity = perf_stats.get('eval_specificity_mean', {}).get(recommender, 'N/A')
                 exec_time = perf_stats.get('meta_execution_time_seconds_mean', {}).get(recommender, 'N/A')
                 count = perf_stats.get('eval_overlap_accuracy_count', {}).get(recommender, 'N/A')
                 
@@ -758,6 +798,8 @@ class ExperimentAnalyzer:
                     <td class="number">{recall:.4f if isinstance(recall, (int, float)) else recall}</td>
                     <td class="number">{f1_score:.4f if isinstance(f1_score, (int, float)) else f1_score}</td>
                     <td class="number">{roc_auc:.4f if isinstance(roc_auc, (int, float)) else roc_auc}</td>
+                    <td class="number">{sensitivity:.4f if isinstance(sensitivity, (int, float)) else sensitivity}</td>
+                    <td class="number">{specificity:.4f if isinstance(specificity, (int, float)) else specificity}</td>
                     <td class="number">{exec_time:.4f if isinstance(exec_time, (int, float)) else exec_time}</td>
                 </tr>
                 """
@@ -956,6 +998,10 @@ class ExperimentAnalyzer:
             ("recall_gap_analysis", self._create_recall_gap_analysis),
             ("f1_gap_analysis", self._create_f1_gap_analysis),
             ("roc_auc_gap_analysis", self._create_roc_auc_gap_analysis),
+            ("sensitivity_gap_analysis", self._create_sensitivity_gap_analysis),
+            ("specificity_gap_analysis", self._create_specificity_gap_analysis),
+            ("sensitivity_specificity_comparison", self._create_sensitivity_specificity_comparison),
+            ("roc_curve_analysis", self._create_roc_curve_analysis),
             ("result_size_analysis", self._create_result_size_analysis),
             ("execution_time_analysis", self._create_execution_time_analysis),
             ("performance_heatmap", self._create_performance_heatmap),
@@ -1123,6 +1169,26 @@ class ExperimentAnalyzer:
                         <a href="roc_auc_gap_analysis.png">View PNG</a>
                     </div>
                     <div class="viz-item">
+                        <h3>Sensitivity Gap Analysis</h3>
+                        <p>Detailed sensitivity (true positive rate) analysis vs query gap</p>
+                        <a href="sensitivity_gap_analysis.png">View PNG</a>
+                    </div>
+                    <div class="viz-item">
+                        <h3>Specificity Gap Analysis</h3>
+                        <p>Detailed specificity (true negative rate) analysis vs query gap</p>
+                        <a href="specificity_gap_analysis.png">View PNG</a>
+                    </div>
+                    <div class="viz-item">
+                        <h3>Sensitivity & Specificity Comparison</h3>
+                        <p>Comprehensive comparison of sensitivity and specificity metrics</p>
+                        <a href="sensitivity_specificity_comparison.png">View PNG</a>
+                    </div>
+                    <div class="viz-item">
+                        <h3>ROC Curve Analysis</h3>
+                        <p>ROC space analysis and classification performance visualization</p>
+                        <a href="roc_curve_analysis.png">View PNG</a>
+                    </div>
+                    <div class="viz-item">
                         <h3>Performance Heatmap</h3>
                         <p>Multi-dimensional performance visualization</p>
                         <a href="performance_heatmap.png">View PNG</a>
@@ -1176,7 +1242,9 @@ class ExperimentAnalyzer:
             'eval_precision': 'Precision', 
             'eval_recall': 'Recall',
             'eval_f1_score': 'F1 Score',
-            'eval_roc_auc': 'ROC-AUC'
+            'eval_roc_auc': 'ROC-AUC',
+            'eval_sensitivity': 'Sensitivity',
+            'eval_specificity': 'Specificity'
         }
         
         for metric_col, metric_name in metric_names.items():
@@ -1192,8 +1260,10 @@ class ExperimentAnalyzer:
             rows, cols = 1, n_metrics
         elif n_metrics <= 4:
             rows, cols = 2, 2
-        else:
+        elif n_metrics <= 6:
             rows, cols = 2, 3
+        else:
+            rows, cols = 3, 3
         
         fig, axes = plt.subplots(rows, cols, figsize=(cols * 6, rows * 5))
         fig.suptitle('Comprehensive Performance Metrics Comparison', fontsize=16, fontweight='bold')
@@ -2094,6 +2164,268 @@ class ExperimentAnalyzer:
             ax4.set_ylabel(f'{metric_name} per Tuple')
             ax4.legend(title='Recommender', bbox_to_anchor=(1.05, 1), loc='upper left')
             ax4.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        return fig
+
+    def _create_sensitivity_gap_analysis(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
+        """Create publication-ready sensitivity gap analysis visualization."""
+        return self._create_metric_gap_analysis('eval_sensitivity', 'Sensitivity', figsize)
+    
+    def _create_specificity_gap_analysis(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
+        """Create publication-ready specificity gap analysis visualization."""
+        return self._create_metric_gap_analysis('eval_specificity', 'Specificity', figsize)
+    
+    def _create_sensitivity_specificity_comparison(self, figsize: Tuple[float, float] = (14, 10)) -> plt.Figure:
+        """Create comprehensive sensitivity and specificity comparison visualization."""
+        
+        # Check if both metrics are available
+        has_sensitivity = 'eval_sensitivity' in self.results_df.columns
+        has_specificity = 'eval_specificity' in self.results_df.columns
+        
+        if not (has_sensitivity or has_specificity):
+            return None
+        
+        fig, axes = plt.subplots(2, 3, figsize=figsize)
+        fig.suptitle('Comprehensive Sensitivity and Specificity Analysis', fontsize=16, fontweight='bold')
+        
+        # 1. Sensitivity distribution by recommender
+        if has_sensitivity:
+            sns.boxplot(data=self.results_df, x='meta_recommender_name', 
+                       y='eval_sensitivity', ax=axes[0, 0])
+            axes[0, 0].set_title('A) Sensitivity Distribution by Recommender')
+            axes[0, 0].set_xlabel('Recommender System')
+            axes[0, 0].set_ylabel('Sensitivity (True Positive Rate)')
+            axes[0, 0].tick_params(axis='x', rotation=45)
+            
+            # Add mean values
+            means = self.results_df.groupby('meta_recommender_name')['eval_sensitivity'].mean()
+            for i, (recommender, mean_val) in enumerate(means.items()):
+                axes[0, 0].text(i, axes[0, 0].get_ylim()[1] * 0.95, f'μ={mean_val:.3f}', 
+                               ha='center', va='top', fontweight='bold', fontsize=9)
+        else:
+            axes[0, 0].text(0.5, 0.5, 'Sensitivity data\nnot available', 
+                           ha='center', va='center', transform=axes[0, 0].transAxes, fontsize=12)
+            axes[0, 0].set_title('A) Sensitivity Distribution by Recommender')
+        
+        # 2. Specificity distribution by recommender
+        if has_specificity:
+            sns.boxplot(data=self.results_df, x='meta_recommender_name', 
+                       y='eval_specificity', ax=axes[0, 1])
+            axes[0, 1].set_title('B) Specificity Distribution by Recommender')
+            axes[0, 1].set_xlabel('Recommender System')
+            axes[0, 1].set_ylabel('Specificity (True Negative Rate)')
+            axes[0, 1].tick_params(axis='x', rotation=45)
+            
+            # Add mean values
+            means = self.results_df.groupby('meta_recommender_name')['eval_specificity'].mean()
+            for i, (recommender, mean_val) in enumerate(means.items()):
+                axes[0, 1].text(i, axes[0, 1].get_ylim()[1] * 0.95, f'μ={mean_val:.3f}', 
+                               ha='center', va='top', fontweight='bold', fontsize=9)
+        else:
+            axes[0, 1].text(0.5, 0.5, 'Specificity data\nnot available', 
+                           ha='center', va='center', transform=axes[0, 1].transAxes, fontsize=12)
+            axes[0, 1].set_title('B) Specificity Distribution by Recommender')
+        
+        # 3. Sensitivity vs Specificity scatter plot
+        if has_sensitivity and has_specificity:
+            sns.scatterplot(data=self.results_df, x='eval_sensitivity', y='eval_specificity', 
+                           hue='meta_recommender_name', ax=axes[0, 2], alpha=0.7, s=60)
+            axes[0, 2].set_title('C) Sensitivity vs Specificity')
+            axes[0, 2].set_xlabel('Sensitivity (True Positive Rate)')
+            axes[0, 2].set_ylabel('Specificity (True Negative Rate)')
+            axes[0, 2].legend(title='Recommender', bbox_to_anchor=(1.05, 1), loc='upper left')
+            axes[0, 2].grid(True, alpha=0.3)
+            
+            # Add diagonal line for reference
+            axes[0, 2].plot([0, 1], [0, 1], 'k--', alpha=0.5, linewidth=1)
+        else:
+            axes[0, 2].text(0.5, 0.5, 'Insufficient data for\nSensitivity vs Specificity\ncomparison', 
+                           ha='center', va='center', transform=axes[0, 2].transAxes, fontsize=12)
+            axes[0, 2].set_title('C) Sensitivity vs Specificity')
+        
+        # 4. Sensitivity vs gap analysis
+        if has_sensitivity and 'meta_gap' in self.results_df.columns:
+            gap_analysis = self.results_df.groupby(['meta_recommender_name', 'meta_gap']).agg({
+                'eval_sensitivity': ['mean', 'std']
+            }).reset_index()
+            gap_analysis.columns = ['recommender', 'gap', 'mean_sensitivity', 'std_sensitivity']
+            
+            for recommender in gap_analysis['recommender'].unique():
+                data = gap_analysis[gap_analysis['recommender'] == recommender]
+                axes[1, 0].errorbar(data['gap'], data['mean_sensitivity'], yerr=data['std_sensitivity'], 
+                                  label=recommender, marker='o', linewidth=2, markersize=6)
+            
+            axes[1, 0].set_title('D) Sensitivity vs Query Gap')
+            axes[1, 0].set_xlabel('Query Gap')
+            axes[1, 0].set_ylabel('Mean Sensitivity')
+            axes[1, 0].legend()
+            axes[1, 0].grid(True, alpha=0.3)
+        else:
+            axes[1, 0].text(0.5, 0.5, 'Insufficient data for\nSensitivity gap analysis', 
+                           ha='center', va='center', transform=axes[1, 0].transAxes, fontsize=12)
+            axes[1, 0].set_title('D) Sensitivity vs Query Gap')
+        
+        # 5. Specificity vs gap analysis
+        if has_specificity and 'meta_gap' in self.results_df.columns:
+            gap_analysis = self.results_df.groupby(['meta_recommender_name', 'meta_gap']).agg({
+                'eval_specificity': ['mean', 'std']
+            }).reset_index()
+            gap_analysis.columns = ['recommender', 'gap', 'mean_specificity', 'std_specificity']
+            
+            for recommender in gap_analysis['recommender'].unique():
+                data = gap_analysis[gap_analysis['recommender'] == recommender]
+                axes[1, 1].errorbar(data['gap'], data['mean_specificity'], yerr=data['std_specificity'], 
+                                  label=recommender, marker='o', linewidth=2, markersize=6)
+            
+            axes[1, 1].set_title('E) Specificity vs Query Gap')
+            axes[1, 1].set_xlabel('Query Gap')
+            axes[1, 1].set_ylabel('Mean Specificity')
+            axes[1, 1].legend()
+            axes[1, 1].grid(True, alpha=0.3)
+        else:
+            axes[1, 1].text(0.5, 0.5, 'Insufficient data for\nSpecificity gap analysis', 
+                           ha='center', va='center', transform=axes[1, 1].transAxes, fontsize=12)
+            axes[1, 1].set_title('E) Specificity gap analysis')
+        
+        # 6. Combined heatmap of sensitivity and specificity
+        if has_sensitivity and has_specificity:
+            # Calculate mean values for each recommender
+            sens_means = self.results_df.groupby('meta_recommender_name')['eval_sensitivity'].mean()
+            spec_means = self.results_df.groupby('meta_recommender_name')['eval_specificity'].mean()
+            
+            combined_data = pd.DataFrame({
+                'Sensitivity': sens_means,
+                'Specificity': spec_means
+            })
+            
+            sns.heatmap(combined_data.T, annot=True, fmt='.3f', cmap='RdYlGn', 
+                       ax=axes[1, 2], cbar_kws={'label': 'Score'})
+            axes[1, 2].set_title('F) Sensitivity & Specificity Heatmap')
+            axes[1, 2].set_xlabel('Recommender System')
+            axes[1, 2].set_ylabel('Metric Type')
+        else:
+            axes[1, 2].text(0.5, 0.5, 'Insufficient data for\ncombined heatmap', 
+                           ha='center', va='center', transform=axes[1, 2].transAxes, fontsize=12)
+            axes[1, 2].set_title('F) Sensitivity & Specificity Heatmap')
+        
+        plt.tight_layout()
+        return fig
+    
+    def _create_roc_curve_analysis(self, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
+        """Create ROC curve analysis visualization using sensitivity and specificity."""
+        
+        # Check if we have the necessary data
+        has_sensitivity = 'eval_sensitivity' in self.results_df.columns
+        has_specificity = 'eval_specificity' in self.results_df.columns
+        has_roc_auc = 'eval_roc_auc' in self.results_df.columns
+        
+        if not (has_sensitivity and has_specificity):
+            return None
+        
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=figsize)
+        fig.suptitle('ROC Curve and Classification Performance Analysis', fontsize=16, fontweight='bold')
+        
+        # 1. ROC space plot (1-Specificity vs Sensitivity)
+        self.results_df['fpr'] = 1 - self.results_df['eval_specificity']  # False Positive Rate
+        
+        # Plot points for each recommender
+        for recommender in self.results_df['meta_recommender_name'].unique():
+            data = self.results_df[self.results_df['meta_recommender_name'] == recommender]
+            ax1.scatter(data['fpr'], data['eval_sensitivity'], 
+                       label=recommender, alpha=0.7, s=50)
+        
+        # Add diagonal line (random classifier)
+        ax1.plot([0, 1], [0, 1], 'k--', alpha=0.5, linewidth=1, label='Random Classifier')
+        
+        ax1.set_title('A) ROC Space (Sensitivity vs 1-Specificity)')
+        ax1.set_xlabel('False Positive Rate (1 - Specificity)')
+        ax1.set_ylabel('True Positive Rate (Sensitivity)')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+        ax1.set_xlim(0, 1)
+        ax1.set_ylim(0, 1)
+        
+        # 2. ROC-AUC distribution by recommender
+        if has_roc_auc:
+            sns.boxplot(data=self.results_df, x='meta_recommender_name', 
+                       y='eval_roc_auc', ax=ax2)
+            ax2.set_title('B) ROC-AUC Distribution by Recommender')
+            ax2.set_xlabel('Recommender System')
+            ax2.set_ylabel('ROC-AUC Score')
+            ax2.tick_params(axis='x', rotation=45)
+            
+            # Add horizontal line at 0.5 (random performance)
+            ax2.axhline(y=0.5, color='red', linestyle='--', alpha=0.7, label='Random Performance')
+            ax2.legend()
+            
+            # Add mean values
+            means = self.results_df.groupby('meta_recommender_name')['eval_roc_auc'].mean()
+            for i, (recommender, mean_val) in enumerate(means.items()):
+                ax2.text(i, ax2.get_ylim()[1] * 0.95, f'μ={mean_val:.3f}', 
+                        ha='center', va='top', fontweight='bold', fontsize=9)
+        else:
+            ax2.text(0.5, 0.5, 'ROC-AUC data\nnot available', 
+                    ha='center', va='center', transform=ax2.transAxes, fontsize=12)
+            ax2.set_title('B) ROC-AUC Distribution by Recommender')
+        
+        # 3. Sensitivity + Specificity (Balanced Accuracy)
+        if has_sensitivity and has_specificity:
+            self.results_df['balanced_accuracy'] = (self.results_df['eval_sensitivity'] + self.results_df['eval_specificity']) / 2
+            
+            sns.boxplot(data=self.results_df, x='meta_recommender_name', 
+                       y='balanced_accuracy', ax=ax3)
+            ax3.set_title('C) Balanced Accuracy Distribution by Recommender')
+            ax3.set_xlabel('Recommender System')
+            ax3.set_ylabel('Balanced Accuracy (Sens+Spec)/2')
+            ax3.tick_params(axis='x', rotation=45)
+            
+            # Add mean values
+            means = self.results_df.groupby('meta_recommender_name')['balanced_accuracy'].mean()
+            for i, (recommender, mean_val) in enumerate(means.items()):
+                ax3.text(i, ax3.get_ylim()[1] * 0.95, f'μ={mean_val:.3f}', 
+                        ha='center', va='top', fontweight='bold', fontsize=9)
+        else:
+            ax3.text(0.5, 0.5, 'Insufficient data for\nbalanced accuracy calculation', 
+                    ha='center', va='center', transform=ax3.transAxes, fontsize=12)
+            ax3.set_title('C) Balanced Accuracy Distribution by Recommender')
+        
+        # 4. Classification performance quadrant analysis
+        if has_sensitivity and has_specificity:
+            # Create quadrant plot
+            median_sens = self.results_df['eval_sensitivity'].median()
+            median_spec = self.results_df['eval_specificity'].median()
+            
+            for recommender in self.results_df['meta_recommender_name'].unique():
+                data = self.results_df[self.results_df['meta_recommender_name'] == recommender]
+                ax4.scatter(data['eval_specificity'], data['eval_sensitivity'], 
+                           label=recommender, alpha=0.7, s=50)
+            
+            # Add quadrant lines
+            ax4.axhline(y=median_sens, color='gray', linestyle='--', alpha=0.5)
+            ax4.axvline(x=median_spec, color='gray', linestyle='--', alpha=0.5)
+            
+            # Add quadrant labels
+            ax4.text(0.25, 0.75, 'High Sens\nLow Spec', ha='center', va='center', 
+                    transform=ax4.transAxes, fontsize=10, bbox=dict(boxstyle="round,pad=0.3", facecolor="lightblue", alpha=0.7))
+            ax4.text(0.75, 0.75, 'High Sens\nHigh Spec\n(Ideal)', ha='center', va='center', 
+                    transform=ax4.transAxes, fontsize=10, bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgreen", alpha=0.7))
+            ax4.text(0.25, 0.25, 'Low Sens\nLow Spec\n(Poor)', ha='center', va='center', 
+                    transform=ax4.transAxes, fontsize=10, bbox=dict(boxstyle="round,pad=0.3", facecolor="lightcoral", alpha=0.7))
+            ax4.text(0.75, 0.25, 'Low Sens\nHigh Spec', ha='center', va='center', 
+                    transform=ax4.transAxes, fontsize=10, bbox=dict(boxstyle="round,pad=0.3", facecolor="lightyellow", alpha=0.7))
+            
+            ax4.set_title('D) Classification Performance Quadrants')
+            ax4.set_xlabel('Specificity (True Negative Rate)')
+            ax4.set_ylabel('Sensitivity (True Positive Rate)')
+            ax4.legend()
+            ax4.grid(True, alpha=0.3)
+            ax4.set_xlim(0, 1)
+            ax4.set_ylim(0, 1)
+        else:
+            ax4.text(0.5, 0.5, 'Insufficient data for\nquadrant analysis', 
+                    ha='center', va='center', transform=ax4.transAxes, fontsize=12)
+            ax4.set_title('D) Classification Performance Quadrants')
         
         plt.tight_layout()
         return fig
