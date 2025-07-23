@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from unittest.mock import Mock, patch
 
-from query_data_predictor.recommenders.similarity_recommender import SimilarityRecommender
+from query_data_predictor.recommender.similarity_recommender import SimilarityRecommender
 from .test_fixtures import (
     sample_config, simple_dataframe, empty_dataframe, single_row_dataframe,
     mixed_dataframe, large_dataframe, all_recommendation_modes
