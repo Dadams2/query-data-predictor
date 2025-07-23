@@ -1,5 +1,5 @@
 from fixtures import sample_config
-from query_data_predictor.recommenders.tuple_recommender import TupleRecommender
+from query_data_predictor.recommender.tuple_recommender import TupleRecommender
 import pytest
 import pandas as pd
 import numpy as np

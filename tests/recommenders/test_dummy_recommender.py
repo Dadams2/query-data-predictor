@@ -5,7 +5,7 @@ Tests for the DummyRecommender class.
 import pytest
 import pandas as pd
 
-from query_data_predictor.recommenders.dummy_recommender import DummyRecommender
+from query_data_predictor.recommender.dummy_recommender import DummyRecommender
 from .test_fixtures import (
     sample_config, simple_dataframe, empty_dataframe, single_row_dataframe,
     config_top_quartile, config_percentage, all_recommendation_modes, large_dataframe

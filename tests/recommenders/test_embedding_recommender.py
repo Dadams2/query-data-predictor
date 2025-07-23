@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from unittest.mock import Mock, patch
 
-from query_data_predictor.recommenders.embedding_recommender import EmbeddingRecommender
+from query_data_predictor.recommender.embedding_recommender import EmbeddingRecommender
 from .test_fixtures import (
     sample_config, simple_dataframe, empty_dataframe, single_row_dataframe,
     mixed_dataframe, large_dataframe, all_recommendation_modes

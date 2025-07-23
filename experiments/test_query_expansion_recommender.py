@@ -7,7 +7,7 @@ import pandas as pd
 from dotenv import load_dotenv
 
 from query_data_predictor.query_runner import QueryRunner
-from query_data_predictor.recommenders.query_expansion_recommender import QueryExpansionRecommender
+from query_data_predictor.recommender.query_expansion_recommender import QueryExpansionRecommender
 
 # Load environment variables
 load_dotenv()

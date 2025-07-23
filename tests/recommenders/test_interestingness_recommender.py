@@ -6,7 +6,7 @@ import pytest
 import pandas as pd
 from unittest.mock import Mock, patch
 
-from query_data_predictor.recommenders.interestingness_recommender import InterestingnessRecommender
+from query_data_predictor.recommender.interestingness_recommender import InterestingnessRecommender
 from .test_fixtures import (
     sample_config, simple_dataframe, empty_dataframe, single_row_dataframe,
     astronomy_dataframe, all_recommendation_modes

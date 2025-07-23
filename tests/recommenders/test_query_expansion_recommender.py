@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 
-from query_data_predictor.recommenders.query_expansion_recommender import QueryExpansionRecommender, QueryCandidate, QueryBudgetManager
+from query_data_predictor.recommender.query_expansion_recommender import QueryExpansionRecommender, QueryCandidate, QueryBudgetManager
 from .test_fixtures import (
     sample_config, simple_dataframe, empty_dataframe, single_row_dataframe,
     mixed_dataframe, large_dataframe, all_recommendation_modes

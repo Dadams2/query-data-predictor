@@ -6,7 +6,7 @@ import pytest
 import pandas as pd
 import numpy as np
 
-from query_data_predictor.recommenders.random_recommender import RandomRecommender
+from query_data_predictor.recommender.random_recommender import RandomRecommender
 from .test_fixtures import (
     sample_config, simple_dataframe, empty_dataframe, single_row_dataframe,
     config_top_quartile, config_percentage, all_recommendation_modes, large_dataframe

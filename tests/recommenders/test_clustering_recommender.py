@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from unittest.mock import patch, Mock
 
-from query_data_predictor.recommenders.clustering_recommender import ClusteringRecommender
+from query_data_predictor.recommender.clustering_recommender import ClusteringRecommender
 from .test_fixtures import (
     sample_config, simple_dataframe, empty_dataframe, single_row_dataframe,
     mixed_dataframe, large_dataframe, all_recommendation_modes

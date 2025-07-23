@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import all recommenders
-from query_data_predictor.recommenders import (
+from query_data_predictor.recommender import (
     SimilarityRecommender,
     FrequencyRecommender, 
     SamplingRecommender,

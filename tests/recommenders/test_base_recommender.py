@@ -6,7 +6,7 @@ import pytest
 import pandas as pd
 from unittest.mock import Mock
 
-from query_data_predictor.recommenders.base_recommender import BaseRecommender, RecommendationMode
+from query_data_predictor.recommender.base_recommender import BaseRecommender, RecommendationMode
 from .test_fixtures import (
     sample_config, simple_dataframe, config_top_quartile, 
     config_percentage, all_recommendation_modes
