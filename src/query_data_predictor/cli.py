@@ -6,11 +6,12 @@ import click
 import logging
 from pathlib import Path
 from typing import Optional
-
+from datetime import datetime
 from query_data_predictor.config_manager import ConfigManager
 from query_data_predictor.experiment_runner import ExperimentRunner
 from query_data_predictor.logging_config import setup_logging
 
+logger = logging.getLogger(__name__)
 
 @click.group()
 @click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
@@ -44,35 +45,38 @@ def main(ctx, verbose):
               type=click.Path(path_type=Path),
               help='Output directory for results')
 @click.pass_context
-def run_experiment(ctx, config, data_path, session_id, gap, output):
+def run_experiment(ctx, config):
     """Run prediction experiment on query data."""
     click.echo("Starting query prediction experiment...")
-    
+
+    # get config values and validate 
+    data_path = config.get('experiment', {}).get('data_path', None)
+    sessions = config.get('experiment', {}).get('sessions', [])
+    gap = config.get('experiment', {}).get('prediction_gap', 1)
+    output_dir = config.get('output', {}).get('output_directory', None)
+    # resolve output path then add timestamped subdirectory with name
+    if output_dir:
+        output_dir = Path(output_dir).absolute()
+    else:
+        output_dir = Path.cwd().absolute() / 'results'
+
     try:
-        # Initialize experiment runner
+        logger.info(f"Using data path: {data_path}")
+        logger.info(f"Using output directory: {output_dir}")
+        logger.info(f"Using session IDs: {sessions}")
+
         runner = ExperimentRunner(
-            data_path=str(data_path),
-            config_path=str(config) if config else None
+            output_dir=output_dir,
+            data_path=data_path,
+            sessions=sessions,
+            gap=gap,
+            config=config
         )
-        
-        # Override output directory if specified
-        if output:
-            runner.output_dir = output
-            runner.output_dir.mkdir(parents=True, exist_ok=True)
-        
-        if session_id:
-            # Run experiment for specific session
-            click.echo(f"Running experiment for session: {session_id}")
-            result = runner.run_experiment_for_session(session_id, gap)
-            click.echo(f"Experiment completed for session {session_id}")
-            click.echo(f"Results saved to: {runner.output_dir}")
-        else:
-            # Run experiment for all sessions
-            click.echo("Running experiment for all sessions...")
-            results = runner.run_experiment_for_all_sessions()
-            click.echo("Full experiment completed")
-            click.echo(f"Results saved to: {runner.output_dir}")
-            
+
+        runner.run_experiment()
+
+        logger.info(f"Completed recommender experiment for all sessions")
+
     except Exception as e:
         click.echo(f"Error running experiment: {e}", err=True)
         if ctx.obj['verbose']:
