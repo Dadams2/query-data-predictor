@@ -1,0 +1,95 @@
+# Performance-optimized configurations for all recommenders
+# This file contains tuned configurations for maximum performance
+
+# Similarity Recommender Configuration
+similarity_recommender:
+  similarity:
+    metric: 'cosine'  # Fastest similarity metric
+    use_pca: true
+    pca_components: 0.95  # Keep 95% variance
+    max_features: 50  # Limit feature explosion
+    cache_enabled: true
+
+# Frequency Recommender Configuration  
+frequency_recommender:
+  frequency:
+    method: 'weighted'  # Best balance of speed and quality
+    pattern_length: 2  # Limit pattern complexity
+    min_frequency: 2
+    cache_enabled: true
+    max_unique_values: 30  # Prevent memory explosion
+
+# Sampling Recommender Configuration
+sampling_recommender:
+  sampling:
+    method: 'stratified'  # Best sampling strategy
+    sample_size: 500  # Good balance
+    sample_ratio: 0.15  # 15% sample
+    min_sample_size: 50
+    scoring_method: 'variance'  # Fastest scoring
+    use_confidence_intervals: false  # Disable for speed
+    confidence_level: 0.95
+
+# Hierarchical Recommender Configuration
+hierarchical_recommender:
+  hierarchical:
+    coarse_method: 'clustering'  # Most effective filtering
+    fine_method: 'similarity'  # Fast fine-grained analysis
+    coarse_ratio: 0.2  # Keep 20% after coarse filtering
+    min_coarse_candidates: 30
+    max_coarse_candidates: 200
+    n_clusters: 8  # Good balance
+
+# Index Recommender Configuration
+index_recommender:
+  indexing:
+    index_types: ['value', 'pattern']  # Skip range for speed
+    max_index_size: 5000
+    enable_compound_indices: true
+    max_compound_size: 2  # Limit complexity
+    scoring_method: 'weighted'
+
+# Incremental Recommender Configuration
+incremental_recommender:
+  incremental:
+    learning_rate: 0.15  # Faster adaptation
+    decay_factor: 0.98  # Slower forgetting
+    window_size: 500  # Moderate memory
+    min_pattern_frequency: 2
+    update_threshold: 0.1
+    enable_online_learning: true
+
+# Embedding Recommender Configuration
+embedding_recommender:
+  embedding:
+    embedding_dim: 32  # Good balance of speed and quality
+    use_pretrained: false
+    method: 'pca'  # Fastest method
+    nn_algorithm: 'auto'  # Let sklearn choose
+    n_neighbors: 5  # Fewer neighbors for speed
+    distance_metric: 'cosine'  # Fast metric
+    enable_caching: true
+
+# Enhanced Clustering Recommender Configuration
+enhanced_clustering_recommender:
+  clustering:
+    n_clusters: 8
+    init_method: 'k-means++'  # Better initialization
+    max_iter: 100  # Limit iterations
+    use_pca: true
+    pca_components: 0.90
+    selection_strategy: 'diverse'  # Best strategy
+    enable_parallel: true
+
+# General recommendation settings for all recommenders
+recommendation:
+  mode: 'top_k'  # Fastest mode
+  top_k: 20
+  score_threshold: 0.0  # No threshold filtering for speed
+
+# Performance monitoring
+performance:
+  enable_timing: true
+  enable_memory_tracking: true
+  max_execution_time: 10.0  # 10 second timeout
+  max_memory_mb: 500  # 500MB memory limit

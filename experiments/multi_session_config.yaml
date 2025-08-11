@@ -1,0 +1,56 @@
+---
+# Multi-Session Experiment Configuration
+
+experiment_config:
+  # Session selection parameters
+  session_selection:
+    min_queries: 3  # Minimum queries per session
+    max_sessions: 20  # Maximum sessions to process
+    selection_strategy: "diverse"  # Options: random, largest, smallest, diverse
+  
+  # Experiment parameters
+  experiment_params:
+    max_gap: 5  # Maximum gap between queries
+    include_query_text: true  # Extract and store query text
+    store_intermediate_states: false  # Store recommender internal states
+  
+  # Output configuration
+  output_config:
+    enable_full_tuple_storage: false  # Store complete tuple data
+    enable_state_tracking: false  # Track recommender state changes
+    create_visualizations: true  # Generate analysis visualizations
+    create_publication_figures: true  # Create publication-ready figures
+    
+  # Analysis configuration
+  analysis_config:
+    include_statistical_tests: true  # Run statistical significance tests
+    include_correlation_analysis: true  # Analyze metric correlations
+    include_temporal_analysis: true  # Analyze trends over time
+    confidence_level: 0.95  # Confidence level for statistical tests
+
+# Recommender-specific configurations
+recommender_configs:
+  dummy:
+    enabled: true
+  random:
+    enabled: true
+    random_seed: 42
+  clustering:
+    enabled: true
+    n_clusters: 3
+    random_state: 42
+  interestingness:
+    enabled: true
+    
+# Visualization preferences
+visualization_config:
+  figure_size: [12, 8]  # Default figure size (width, height)
+  dpi: 300  # Resolution for saved figures
+  save_formats: ["png", "pdf"]  # Output formats
+  color_palette: "husl"  # Color scheme
+  
+# Performance settings
+performance_config:
+  timeout_seconds: 120  # Timeout per recommender evaluation
+  parallel_sessions: false  # Whether to process sessions in parallel
+  max_memory_gb: 8  # Maximum memory usage limit
