@@ -436,6 +436,323 @@ class RecommenderExperimentRunner:
         logger.info(f"Enhanced experiment completed: {successful_experiments}/{total_experiments} successful")
         return summary
     
+    def run_adaptive_size_experiment(self, 
+                                   session_id: str, 
+                                   max_gap: int = 5,
+                                   include_query_text: bool = False,
+                                   store_intermediate_states: bool = False) -> Dict[str, Any]:
+        """
+        Run enhanced experiments where each recommender predicts exactly the number of tuples
+        in the actual next query result (adaptive recommendation size).
+        
+        This experiment mode tests how well recommenders perform when they know the target size,
+        which eliminates the bias of choosing an arbitrary k value.
+        
+        Args:
+            session_id: ID of the session to experiment on
+            max_gap: Maximum gap between queries to test
+            include_query_text: Whether to extract and store actual query text
+            store_intermediate_states: Whether to store recommender states
+            
+        Returns:
+            Dictionary with experiment summary and collection info
+        """
+        
+        # Start experimental session
+        exp_session_id = self.collector.start_experiment_session(
+            f"adaptive_size_eval_{session_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
+        self.current_session_id = exp_session_id
+        
+        logger.info(f"Starting adaptive size experiment on session {session_id}")
+        logger.info(f"Experiment session ID: {exp_session_id}")
+        
+        # Get all query IDs for this session
+        query_ids = self.query_result_sequence.get_ordered_query_ids(session_id)
+        if len(query_ids) < 2:
+            logger.warning(f"Session {session_id} has fewer than 2 queries, skipping")
+            return {"error": "Insufficient queries", "session_id": session_id}
+        
+        logger.info(f"Session {session_id} has {len(query_ids)} queries")
+        
+        # Collect experiments
+        experiment_ids = []
+        total_experiments = 0
+        successful_experiments = 0
+        
+        # Run experiments for different gaps
+        for gap in range(1, min(max_gap + 1, len(query_ids))):
+            logger.info(f"Testing gap {gap} with adaptive sizing")
+            gap_results = self._run_adaptive_size_gap_experiment(
+                session_id, gap, include_query_text, store_intermediate_states
+            )
+            experiment_ids.extend(gap_results['experiment_ids'])
+            total_experiments += gap_results['total']
+            successful_experiments += gap_results['successful']
+        
+        # Create summary
+        summary = {
+            "experiment_session_id": exp_session_id,
+            "source_session_id": session_id,
+            "experiment_type": "adaptive_size",
+            "total_experiments": total_experiments,
+            "successful_experiments": successful_experiments,
+            "error_rate": (total_experiments - successful_experiments) / total_experiments if total_experiments > 0 else 0,
+            "experiment_ids": experiment_ids,
+            "output_directory": str(self.collector.base_output_dir),
+            "collection_complete": True,
+            "description": "Experiments where each recommender predicts exactly the target query result size"
+        }
+        
+        # Generate collection summary
+        collection_summary = self.collector.create_analysis_summary(exp_session_id)
+        summary.update(collection_summary)
+        
+        logger.info(f"Adaptive size experiment completed: {successful_experiments}/{total_experiments} successful")
+        return summary
+    
+    def _run_adaptive_size_gap_experiment(self, 
+                                        session_id: str, 
+                                        gap: int,
+                                        include_query_text: bool,
+                                        store_intermediate_states: bool) -> Dict[str, Any]:
+        """Run adaptive size experiments for a specific gap between queries."""
+        
+        experiment_ids = []
+        total_count = 0
+        successful_count = 0
+        
+        try:
+            # Iterate through all valid query pairs with this gap
+            for current_id, future_id, current_results, future_results in \
+                self.query_result_sequence.iter_query_result_pairs(session_id, gap):
+                
+                # Skip if current results are empty
+                if current_results.empty:
+                    continue
+                
+                # Get the target size (number of tuples in the future query)
+                target_size = len(future_results)
+                
+                logger.debug(f"Testing with target size {target_size} for query pair {current_id}->{future_id}")
+                
+                # Extract query information if needed
+                current_query_text = self._get_query_text(session_id, current_id) if include_query_text else ""
+                future_query_text = self._get_query_text(session_id, future_id) if include_query_text else ""
+                
+                # Test each recommender with the adaptive target size
+                for recommender_name, recommender in self.recommenders.items():
+                    total_count += 1
+                    
+                    exp_id = self._evaluate_adaptive_size_recommender(
+                        session_id=session_id,
+                        current_query_id=current_id,
+                        future_query_id=future_id,
+                        current_results=current_results,
+                        future_results=future_results,
+                        current_query_text=current_query_text,
+                        future_query_text=future_query_text,
+                        recommender_name=recommender_name,
+                        recommender=recommender,
+                        gap=gap,
+                        target_size=target_size,
+                        store_states=store_intermediate_states
+                    )
+                    
+                    if exp_id:
+                        experiment_ids.append(exp_id)
+                        successful_count += 1
+                        
+        except Exception as e:
+            logger.error(f"Error in adaptive size gap {gap} experiment for session {session_id}: {str(e)}", exc_info=True)
+        
+        return {
+            "experiment_ids": experiment_ids,
+            "total": total_count,
+            "successful": successful_count
+        }
+    
+    def _evaluate_adaptive_size_recommender(self, 
+                                          session_id: str,
+                                          current_query_id: str, 
+                                          future_query_id: str,
+                                          current_results: pd.DataFrame,
+                                          future_results: pd.DataFrame,
+                                          current_query_text: str,
+                                          future_query_text: str,
+                                          recommender_name: str,
+                                          recommender: Any,
+                                          gap: int,
+                                          target_size: int,
+                                          store_states: bool = False) -> Optional[str]:
+        """Evaluate a single recommender with adaptive target size."""
+        
+        start_time = time.time()
+        
+        try:
+            # Set timeout based on dataset size
+            timeout_seconds = 30 if len(current_results) < 100 else 120
+            
+            with self._timeout(timeout_seconds):
+                # Get recommendations with the specific target size
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    # Use top_k parameter to get exactly the target size
+                    recommendations = recommender.recommend_tuples(current_results, top_k=target_size)
+            
+            execution_time = time.time() - start_time
+            
+            # Calculate comprehensive metrics
+            overlap_accuracy = self.evaluator.overlap_accuracy(
+                previous=current_results,
+                actual=future_results,
+                predicted=recommendations
+            )
+            
+            jaccard_sim = self.evaluator.jaccard_similarity(recommendations, future_results)
+            
+            # Calculate standard metrics
+            precision, recall, f1 = self._calculate_precision_recall_f1(
+                recommendations, future_results, current_results
+            )
+            
+            # Calculate @k metrics for multiple k values
+            # Include the target_size as one of the k values
+            k_values = self._determine_adaptive_k_values(recommendations, future_results, target_size)
+            at_k_metrics = self.evaluator.precision_recall_at_k_range(
+                recommendations, future_results, k_values
+            )
+            
+            # Calculate ROC-AUC
+            roc_auc = self._calculate_roc_auc(recommendations, future_results, current_results)
+            
+            # Create contexts
+            current_context = QueryContext(
+                session_id=session_id,
+                query_position=current_query_id,
+                query_text=current_query_text,
+                query_hash=self._hash_string(current_query_text),
+                result_set_size=len(current_results)
+            )
+            
+            future_context = QueryContext(
+                session_id=session_id,
+                query_position=future_query_id,
+                query_text=future_query_text,
+                query_hash=self._hash_string(future_query_text),
+                result_set_size=len(future_results)
+            )
+            
+            # Create recommendation result
+            rec_result = RecommendationResult(
+                experiment_id="",  # Will be generated
+                predicted_tuples=recommendations,
+                recommendation_metadata={
+                    "recommender_type": recommender_name,
+                    "input_size": len(current_results),
+                    "output_size": len(recommendations),
+                    "target_size": target_size,
+                    "adaptive_sizing": True
+                }
+            )
+            
+            # Create evaluation result
+            eval_result = EvaluationResult(
+                experiment_id="",  # Will be generated
+                overlap_accuracy=overlap_accuracy,
+                jaccard_similarity=jaccard_sim,
+                precision=precision,
+                recall=recall,
+                f1_score=f1,
+                exact_matches=self._count_exact_matches(recommendations, future_results),
+                predicted_count=len(recommendations),
+                actual_count=len(future_results),
+                intersection_count=len(pd.merge(recommendations, future_results, how='inner')),
+                union_count=len(pd.concat([recommendations, future_results]).drop_duplicates()),
+                roc_auc=roc_auc,
+                precision_at_k=at_k_metrics['precision_at_k'],
+                recall_at_k=at_k_metrics['recall_at_k'],
+                f1_at_k=at_k_metrics['f1_at_k']
+            )
+            
+            # Collect the experiment
+            experiment_id = self.collector.collect_experiment(
+                session_id=self.current_session_id,
+                current_query_position=current_context.query_position,
+                target_query_position=future_context.query_position,
+                recommender_name=recommender_name,
+                current_query_context=current_context,
+                target_query_context=future_context,
+                recommendation_result=rec_result,
+                actual_results=future_results,
+                evaluation_result=eval_result,
+                recommender_config=self.recommender_config,
+                execution_time=execution_time
+            )
+            
+            logger.debug(f"Adaptive size evaluation completed for {recommender_name}, gap {gap}, target_size {target_size}: "
+                        f"accuracy={overlap_accuracy:.4f}, precision={precision:.4f}, "
+                        f"recall={recall:.4f}, AUC={roc_auc:.4f}, time={execution_time:.2f}s")
+            
+            return experiment_id
+                        
+        except Exception as e:
+            execution_time = time.time() - start_time
+            error_msg = str(e)
+            
+            if "Timed out" in error_msg:
+                logger.error(f"Timeout for {recommender_name} on gap {gap} (adaptive size {target_size}): {error_msg}", exc_info=True)
+            else:
+                logger.error(f"Error evaluating {recommender_name} for gap {gap} (adaptive size {target_size}): {error_msg}", exc_info=True)
+            
+            # Still collect the failed experiment for analysis
+            try:
+                current_context = QueryContext(
+                    session_id=int(session_id),
+                    query_position=int(str(current_query_id).split('_')[-1]) if '_' in str(current_query_id) else int(current_query_id),
+                    query_text=current_query_text,
+                    query_hash=self._hash_string(current_query_text),
+                    result_set_size=len(current_results)
+                )
+                
+                future_context = QueryContext(
+                    session_id=int(session_id),
+                    query_position=int(str(future_query_id).split('_')[-1]) if '_' in str(future_query_id) else int(future_query_id),
+                    query_text=future_query_text,
+                    query_hash=self._hash_string(future_query_text),
+                    result_set_size=len(future_results)
+                )
+                
+                # Create empty recommendation result for failed case
+                rec_result = RecommendationResult(
+                    experiment_id="",
+                    predicted_tuples=pd.DataFrame(),
+                    recommendation_metadata={
+                        "error": error_msg,
+                        "target_size": target_size,
+                        "adaptive_sizing": True
+                    }
+                )
+                
+                experiment_id = self.collector.collect_experiment(
+                    session_id=self.current_session_id,
+                    current_query_position=current_context.query_position,
+                    target_query_position=future_context.query_position,
+                    recommender_name=recommender_name,
+                    current_query_context=current_context,
+                    target_query_context=future_context,
+                    recommendation_result=rec_result,
+                    actual_results=future_results,
+                    recommender_config=self.recommender_config,
+                    execution_time=execution_time,
+                    error_info=error_msg
+                )
+                
+                return experiment_id
+            except Exception as collect_error:
+                logger.error(f"Failed to collect error case: {collect_error}", exc_info=True)
+                return None
+    
     def _run_enhanced_gap_experiment(self, 
                                    session_id: str, 
                                    gap: int,
@@ -534,9 +851,15 @@ class RecommenderExperimentRunner:
             
             jaccard_sim = self.evaluator.jaccard_similarity(recommendations, future_results)
             
-            # Calculate additional metrics
+            # Calculate standard metrics
             precision, recall, f1 = self._calculate_precision_recall_f1(
                 recommendations, future_results, current_results
+            )
+            
+            # Calculate @k metrics for multiple k values
+            k_values = self._determine_k_values(recommendations, future_results)
+            at_k_metrics = self.evaluator.precision_recall_at_k_range(
+                recommendations, future_results, k_values
             )
             
             # Calculate ROC-AUC
@@ -583,7 +906,10 @@ class RecommenderExperimentRunner:
                 actual_count=len(future_results),
                 intersection_count=len(pd.merge(recommendations, future_results, how='inner')),
                 union_count=len(pd.concat([recommendations, future_results]).drop_duplicates()),
-                roc_auc=roc_auc
+                roc_auc=roc_auc,
+                precision_at_k=at_k_metrics['precision_at_k'],
+                recall_at_k=at_k_metrics['recall_at_k'],
+                f1_at_k=at_k_metrics['f1_at_k']
             )
             
             # Collect the experiment
@@ -702,6 +1028,84 @@ class RecommenderExperimentRunner:
         except Exception as e:
             # Fallback to tuple-based comparison if merge fails
             return self._calculate_precision_recall_f1_tuple_based(predicted, actual, baseline)
+    
+    def _determine_k_values(self, predicted: pd.DataFrame, actual: pd.DataFrame) -> List[int]:
+        """
+        Determine appropriate k values for @k metrics based on data sizes.
+        
+        Args:
+            predicted: DataFrame with predicted results
+            actual: DataFrame with actual results
+            
+        Returns:
+            List of k values to evaluate
+        """
+        if predicted.empty or actual.empty:
+            return [5, 10, 20, 50]  # Default values
+        
+        # Base k values
+        base_k_values = [5, 10, 20, 50, 100]
+        
+        # Limit k values based on data sizes
+        max_reasonable_k = min(len(predicted), len(actual))
+        
+        # Keep only k values that make sense for the data size
+        valid_k_values = [k for k in base_k_values if k <= max_reasonable_k]
+        
+        # Ensure we have at least one k value
+        if not valid_k_values:
+            valid_k_values = [min(max_reasonable_k, 5)]
+        
+        # Add the actual prediction size as a k value if it's reasonable
+        pred_size = len(predicted)
+        if pred_size not in valid_k_values and pred_size <= 200:
+            valid_k_values.append(pred_size)
+            valid_k_values.sort()
+        
+        return valid_k_values
+    
+    def _determine_adaptive_k_values(self, predicted: pd.DataFrame, actual: pd.DataFrame, target_size: int) -> List[int]:
+        """
+        Determine appropriate k values for @k metrics in adaptive size experiments.
+        
+        Args:
+            predicted: DataFrame with predicted results
+            actual: DataFrame with actual results
+            target_size: The target size used for this experiment
+            
+        Returns:
+            List of k values to evaluate
+        """
+        if predicted.empty or actual.empty:
+            return [5, 10, 20, 50]  # Default values
+        
+        # Base k values
+        base_k_values = [5, 10, 20, 50, 100]
+        
+        # Always include the target size as a key evaluation point
+        k_values = [target_size]
+        
+        # Add base k values that are different from target_size and make sense
+        max_reasonable_k = min(len(predicted), len(actual))
+        
+        for k in base_k_values:
+            if k != target_size and k <= max_reasonable_k:
+                k_values.append(k)
+        
+        # Add some fractions of target_size for detailed analysis
+        for fraction in [0.5, 0.75, 1.25, 1.5]:
+            k_frac = int(target_size * fraction)
+            if k_frac > 0 and k_frac != target_size and k_frac <= max_reasonable_k and k_frac not in k_values:
+                k_values.append(k_frac)
+        
+        # Sort and ensure uniqueness
+        k_values = sorted(list(set(k_values)))
+        
+        # Ensure we have at least one k value
+        if not k_values:
+            k_values = [min(max_reasonable_k, 5)]
+        
+        return k_values
     
     def _calculate_precision_recall_f1_tuple_based(self, predicted: pd.DataFrame, 
                                                   actual: pd.DataFrame, 

@@ -120,7 +120,10 @@ class EvaluationResult:
     intersection_count: int
     union_count: int
     
-    # Ranking metrics (if applicable)
+    # Ranking metrics @k (if applicable)
+    precision_at_k: Optional[Dict[int, float]] = None  # precision@k for different k values
+    recall_at_k: Optional[Dict[int, float]] = None     # recall@k for different k values
+    f1_at_k: Optional[Dict[int, float]] = None         # f1@k for different k values
     ndcg_at_k: Optional[Dict[int, float]] = None
     map_score: Optional[float] = None
     

@@ -148,6 +148,95 @@ class EvaluationMetrics:
         """
         return self.accuracy(predicted, actual)
     
+    def precision_at_k(self, predicted: pd.DataFrame, actual: pd.DataFrame, k: int) -> float:
+        """
+        Calculate precision@k - precision for top-k predictions.
+        
+        Args:
+            predicted: DataFrame with predicted results (assumed to be ranked)
+            actual: DataFrame with actual results
+            k: Number of top predictions to consider
+            
+        Returns:
+            Precision@k score between 0 and 1
+        """
+        if predicted.empty or k <= 0:
+            return 0.0
+        
+        # Take top-k predictions
+        top_k_predicted = predicted.head(k)
+        
+        # Calculate precision for top-k
+        return self.precision(top_k_predicted, actual)
+    
+    def recall_at_k(self, predicted: pd.DataFrame, actual: pd.DataFrame, k: int) -> float:
+        """
+        Calculate recall@k - recall for top-k predictions.
+        
+        Args:
+            predicted: DataFrame with predicted results (assumed to be ranked)
+            actual: DataFrame with actual results
+            k: Number of top predictions to consider
+            
+        Returns:
+            Recall@k score between 0 and 1
+        """
+        if predicted.empty or k <= 0:
+            return 0.0
+        
+        # Take top-k predictions
+        top_k_predicted = predicted.head(k)
+        
+        # Calculate recall for top-k
+        return self.recall(top_k_predicted, actual)
+    
+    def f1_at_k(self, predicted: pd.DataFrame, actual: pd.DataFrame, k: int) -> float:
+        """
+        Calculate F1@k - F1 score for top-k predictions.
+        
+        Args:
+            predicted: DataFrame with predicted results (assumed to be ranked)
+            actual: DataFrame with actual results
+            k: Number of top predictions to consider
+            
+Returns:
+            F1@k score between 0 and 1
+        """
+        if predicted.empty or k <= 0:
+            return 0.0
+        
+        # Take top-k predictions
+        top_k_predicted = predicted.head(k)
+        
+        # Calculate F1 for top-k
+        return self.f1_score(top_k_predicted, actual)
+    
+    def precision_recall_at_k_range(self, predicted: pd.DataFrame, actual: pd.DataFrame, 
+                                   k_values: List[int]) -> Dict[str, Dict[int, float]]:
+        """
+        Calculate precision@k and recall@k for multiple k values.
+        
+        Args:
+            predicted: DataFrame with predicted results (assumed to be ranked)
+            actual: DataFrame with actual results
+            k_values: List of k values to evaluate
+            
+        Returns:
+            Dictionary with 'precision_at_k', 'recall_at_k', and 'f1_at_k' mappings
+        """
+        results = {
+            'precision_at_k': {},
+            'recall_at_k': {},
+            'f1_at_k': {}
+        }
+        
+        for k in k_values:
+            results['precision_at_k'][k] = self.precision_at_k(predicted, actual, k)
+            results['recall_at_k'][k] = self.recall_at_k(predicted, actual, k)
+            results['f1_at_k'][k] = self.f1_at_k(predicted, actual, k)
+        
+        return results
+    
     def f1_score(self, predicted: pd.DataFrame, actual: pd.DataFrame) -> float:
         """
         Calculate F1 score of predictions.
@@ -237,6 +326,39 @@ class EvaluationMetrics:
             'jaccard_recall': jaccard_metrics['recall'],
             'jaccard_f1': jaccard_metrics['f1']
         })
+        
+        return metrics
+    
+    def extended_metrics_with_k(self, predicted: pd.DataFrame, actual: pd.DataFrame, 
+                               k_values: List[int] = None) -> Dict[str, Any]:
+        """
+        Calculate extended metrics including precision@k and recall@k for multiple k values.
+        
+        Args:
+            predicted: DataFrame with predicted results (assumed to be ranked)
+            actual: DataFrame with actual results
+            k_values: List of k values to evaluate (default: [5, 10, 20, 50])
+            
+        Returns:
+            Dictionary mapping metric names to their values, including @k metrics
+        """
+        if k_values is None:
+            # Default k values based on typical recommendation sizes
+            max_k = min(len(predicted), len(actual), 50) if not predicted.empty and not actual.empty else 50
+            k_values = [k for k in [5, 10, 20, 50] if k <= max_k and k > 0]
+            if not k_values:  # fallback if all default k values are too large
+                k_values = [min(len(predicted), len(actual), 5)] if not predicted.empty and not actual.empty else [5]
+        
+        # Get standard metrics
+        metrics = self.standard_metrics(predicted, actual)
+        
+        # Add @k metrics
+        at_k_metrics = self.precision_recall_at_k_range(predicted, actual, k_values)
+        
+        # Flatten the @k metrics into the main metrics dictionary
+        for metric_type, k_dict in at_k_metrics.items():
+            for k, value in k_dict.items():
+                metrics[f"{metric_type}_{k}"] = value
         
         return metrics
     
