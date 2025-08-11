@@ -33,7 +33,7 @@ def main(ctx, verbose):
               help='Path to configuration file (YAML)')
 @click.option('--data-path', '-d',
               type=click.Path(exists=True, path_type=Path),
-              required=True,
+              required=False,
               help='Path to the dataset directory containing metadata.csv')
 @click.option('--session-id', '-s',
               help='Specific session ID to run experiment for')
@@ -45,20 +45,28 @@ def main(ctx, verbose):
               type=click.Path(path_type=Path),
               help='Output directory for results')
 @click.pass_context
-def run_experiment(ctx, config):
+def run_experiment(ctx, config, data_path, session_id, gap, output):
     """Run prediction experiment on query data."""
     click.echo("Starting query prediction experiment...")
 
-    # get config values and validate 
-    data_path = config.get('experiment', {}).get('data_path', None)
-    sessions = config.get('experiment', {}).get('sessions', [])
-    gap = config.get('experiment', {}).get('prediction_gap', 1)
-    output_dir = config.get('output', {}).get('output_directory', None)
+    # Load configuration
+    config_manager = ConfigManager(str(config))
+    config = config_manager.get_config()
+
+    # get values from config but overwrite with args if they exist
+    data_path = data_path or config.get('experiment', {}).get('data_path', None)
+    sessions = session_id or config.get('experiment', {}).get('sessions', [])
+    gap = gap or config.get('experiment', {}).get('prediction_gap', 1)
+    output_dir = output or config.get('output', {}).get('output_directory', None)
+
     # resolve output path then add timestamped subdirectory with name
     if output_dir:
-        output_dir = Path(output_dir).absolute()
+        output_dir = Path(output_dir).resolve()
     else:
-        output_dir = Path.cwd().absolute() / 'results'
+        output_dir = Path.cwd().resolve() / 'results'
+
+    # resolve data path (remove and resolve ../../)
+    data_path = Path(data_path).resolve()
 
     try:
         logger.info(f"Using data path: {data_path}")

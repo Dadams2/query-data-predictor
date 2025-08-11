@@ -28,13 +28,16 @@ class ExperimentRunner:
     """
     Main class for running experiments and evaluating query predictions.
     """
-    def __init__(self, output_dir, data_path, sessions, gap, config: Dict[str, Any]):
+    def __init__(self, output_dir: Path, data_path: Path, sessions: List, gap: int, config: Dict[str, Any]):
         self.output_dir = output_dir
-        self.data_path = data_path
+        self.dataset_dir = data_path
         self.sessions = sessions
         self.gap = gap
         self.config = config
-        self.data_loader = DataLoader(config['data_path'])
-        self.query_sequence = QueryResultSequence(self.data_loader)
-        self.recommender = TupleRecommender(config['recommender'])
+        self.dataloader = DataLoader(str(self.dataset_dir))
+        self.query_result_sequence = QueryResultSequence(self.dataloader)
         self.metrics = EvaluationMetrics(config['evaluation'])
+    
+    def run_experiment(self):
+        print(self.config)
+        return

@@ -91,7 +91,10 @@ class ExperimentSettingsConfig(BaseModel):
     prediction_gap: int = Field(1, ge=1)
     random_seed: int = 42
     sessions_limit: Optional[int] = None
-    
+    # sessions is a list and datapath is a path
+    sessions: List[int] = Field(default_factory=list)
+    data_path: str = "data"
+
     @validator("sessions_limit")
     def validate_sessions_limit(cls, v):
         if v is not None and v <= 0:
