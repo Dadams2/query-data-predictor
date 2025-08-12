@@ -168,19 +168,13 @@ class SimilarityRecommender(BaseRecommender):
         
         # Apply dimensionality reduction if enabled
         if self.use_pca and data_matrix.shape[1] > 3:
-            if self.pca is None:
-                n_components = self.pca_components
-                if isinstance(n_components, float):
-                    # Keep percentage of variance
-                    self.pca = PCA(n_components=n_components, random_state=42)
-                else:
-                    # Keep fixed number of components
-                    n_components = min(n_components, data_matrix.shape[1])
-                    self.pca = PCA(n_components=n_components, random_state=42)
-                
-                data_matrix = self.pca.fit_transform(data_matrix)
+            n_components = self.pca_components
+            if isinstance(n_components, float):
+                pca = PCA(n_components=n_components, random_state=42)
             else:
-                data_matrix = self.pca.transform(data_matrix)
+                n_components = min(n_components, data_matrix.shape[1])
+                pca = PCA(n_components=n_components, random_state=42)
+            data_matrix = pca.fit_transform(data_matrix)
         
         # Standardize data for better similarity computation
         if data_matrix.shape[0] > 1:
