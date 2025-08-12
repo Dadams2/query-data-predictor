@@ -4,6 +4,7 @@ Command-line interface for query_data_predictor using Click.
 
 import click
 import logging
+import yaml
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
@@ -50,13 +51,16 @@ def run_experiment(ctx, config, data_path, session_id, gap, output):
     click.echo("Starting query prediction experiment...")
 
     # Load configuration
-    config_manager = ConfigManager(str(config))
-    config = config_manager.get_config()
+    # config_manager = ConfigManager(str(config))
+    # config = config_manager.get_config()
+    # read in raw config
+    with open(config, 'r') as f:
+        config = yaml.safe_load(f)
 
     # get values from config but overwrite with args if they exist
     data_path = data_path or config.get('experiment', {}).get('data_path', None)
     sessions = session_id or config.get('experiment', {}).get('sessions', [])
-    gap = gap or config.get('experiment', {}).get('prediction_gap', 1)
+    gap = [gap] or config.get('experiment', {}).get('prediction_gap', [1])
     output_dir = output or config.get('output', {}).get('output_directory', None)
 
     # resolve output path then add timestamped subdirectory with name

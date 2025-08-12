@@ -26,20 +26,6 @@ from synthetic_data_generator.writer import write_to_postgres
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-@click.group()
-@click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
-@click.pass_context
-def main(ctx, verbose):
-    """Synthetic Data Generator CLI - Standalone Version"""
-    ctx.ensure_object(dict)
-    
-    # Setup logging
-    log_level = "DEBUG" if verbose else "INFO"
-
-    logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - %(message)s')
-    logger = logging.getLogger(__name__)
-    
-    ctx.obj['verbose'] = verbose
 
 def load_config(config_path):
     """Load configuration from YAML file."""
@@ -362,6 +348,22 @@ def generate_data(config, output_dir, csv, postgres, pg_host, pg_port,
         logger.error(f"Error during data generation: {e}")
         raise click.ClickException(str(e))
 
+@click.group()
+@click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
+@click.pass_context
+def main(ctx, verbose):
+    """Synthetic Data Generator CLI - Standalone Version"""
+    ctx.ensure_object(dict)
+    
+    # Setup logging
+    log_level = "DEBUG" if verbose else "INFO"
+
+    logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger(__name__)
+    
+    ctx.obj['verbose'] = verbose
+
+main.add_command(generate_data, name="generate-data")
 
 if __name__ == '__main__':
-    generate_data()
+    main()
