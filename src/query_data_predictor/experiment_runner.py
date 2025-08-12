@@ -20,6 +20,7 @@ from query_data_predictor.config_manager import ConfigManager
 from query_data_predictor.metrics import EvaluationMetrics
 
 from query_data_predictor.recommender import (
+    BaseRecommender,
     DummyRecommender,
     RandomRecommender,
     ClusteringRecommender,
@@ -146,7 +147,7 @@ class ExperimentRunner:
             current_query_text: str,
             future_query_text: str,
             recommender_name: str,
-            recommender: Any,
+            recommender: BaseRecommender,
             gap: int,
             store_states: bool = False) -> Optional[str]:
         """Evaluate a single recommender and write results to disk in interpretable format."""
@@ -172,7 +173,7 @@ class ExperimentRunner:
             with self._timeout(timeout_seconds):
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    recommended_results = recommender.recommend_tuples(current_results)
+                    recommended_results = recommender.recommend_tuples(current_results, top_k=gap)
             execution_time = time.time() - start_time
             result_record["recommended_results"] = recommended_results.to_dict("records") if isinstance(recommended_results, pd.DataFrame) else recommended_results
             result_record["execution_time"] = execution_time

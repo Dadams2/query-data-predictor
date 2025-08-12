@@ -44,6 +44,7 @@ from query_data_predictor.dataloader import DataLoader
 from query_data_predictor.query_result_sequence import QueryResultSequence
 from query_data_predictor.metrics import EvaluationMetrics
 from query_data_predictor.recommender import (
+    BaseRecommender,
     DummyRecommender,
     RandomRecommender,
     ClusteringRecommender,
@@ -581,7 +582,7 @@ class RecommenderExperimentRunner:
                                           current_query_text: str,
                                           future_query_text: str,
                                           recommender_name: str,
-                                          recommender: Any,
+                                          recommender: BaseRecommender,
                                           gap: int,
                                           target_size: int,
                                           store_states: bool = False) -> Optional[str]:
