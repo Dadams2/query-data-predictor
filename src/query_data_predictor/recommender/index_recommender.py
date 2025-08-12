@@ -48,12 +48,13 @@ class IndexRecommender(BaseRecommender):
         self._last_processed_hash = None
         self._indices_built = False
     
-    def recommend_tuples(self, current_results: pd.DataFrame, **kwargs) -> pd.DataFrame:
+    def recommend_tuples(self, current_results: pd.DataFrame, top_k: Optional[int] = None, **kwargs) -> pd.DataFrame:
         """
         Recommend tuples using pre-built indices for fast lookups.
         
         Args:
             current_results: DataFrame with the current query's results
+            top_k: Number of tuples to return. If provided, overrides config settings.
             **kwargs: Additional keyword arguments
             
         Returns:
@@ -91,7 +92,7 @@ class IndexRecommender(BaseRecommender):
         sorted_df = current_results_copy.sort_values('index_score', ascending=False)
         
         # Apply output limiting
-        result_df = self._limit_output(sorted_df.drop(columns=['index_score']))
+        result_df = self._limit_output(sorted_df.drop(columns=['index_score']), top_k=top_k)
         
         return result_df
     

@@ -23,12 +23,13 @@ class DummyRecommender(BaseRecommender):
         """
         super().__init__(config)
     
-    def recommend_tuples(self, current_results: pd.DataFrame, **kwargs) -> pd.DataFrame:
+    def recommend_tuples(self, current_results: pd.DataFrame, top_k: Optional[int] = None, **kwargs) -> pd.DataFrame:
         """
         Recommend tuples by returning the current query results (possibly limited).
         
         Args:
             current_results: DataFrame with the current query's results
+            top_k: Number of tuples to return. If provided, overrides config settings.
             **kwargs: Additional keyword arguments (ignored)
             
         Returns:
@@ -39,9 +40,8 @@ class DummyRecommender(BaseRecommender):
         if current_results.empty:
             return pd.DataFrame()
         
-        # Apply output limiting based on configuration
-        # return self._limit_output(current_results.copy())
-        return current_results.copy()
+        # Apply output limiting based on configuration or top_k parameter
+        return self._limit_output(current_results.copy(), top_k=top_k)
     
     def name(self) -> str:
         """

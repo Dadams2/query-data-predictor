@@ -49,12 +49,13 @@ class IncrementalRecommender(BaseRecommender):
         self.prediction_history = deque(maxlen=100)  # Track recent prediction quality
         self.adaptation_rate = 0.1  # How fast to adapt to new patterns
     
-    def recommend_tuples(self, current_results: pd.DataFrame, **kwargs) -> pd.DataFrame:
+    def recommend_tuples(self, current_results: pd.DataFrame, top_k: Optional[int] = None, **kwargs) -> pd.DataFrame:
         """
         Recommend tuples using incremental learning model.
         
         Args:
             current_results: DataFrame with the current query's results
+            top_k: Number of tuples to return. If provided, overrides config settings.
             **kwargs: Additional keyword arguments
             
         Returns:
@@ -83,7 +84,7 @@ class IncrementalRecommender(BaseRecommender):
         sorted_df = current_results_copy.sort_values('incremental_score', ascending=False)
         
         # Apply output limiting
-        result_df = self._limit_output(sorted_df.drop(columns=['incremental_score']))
+        result_df = self._limit_output(sorted_df.drop(columns=['incremental_score']), top_k=top_k)
         
         return result_df
     

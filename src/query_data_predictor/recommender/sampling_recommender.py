@@ -42,12 +42,13 @@ class SamplingRecommender(BaseRecommender):
         self._score_cache = {}
         self._last_processed_hash = None
     
-    def recommend_tuples(self, current_results: pd.DataFrame, **kwargs) -> pd.DataFrame:
+    def recommend_tuples(self, current_results: pd.DataFrame, top_k: Optional[int] = None, **kwargs) -> pd.DataFrame:
         """
         Recommend tuples using sampling-based approximation.
         
         Args:
             current_results: DataFrame with the current query's results
+            top_k: Number of tuples to return. If provided, overrides config settings.
             **kwargs: Additional keyword arguments
             
         Returns:
@@ -60,7 +61,7 @@ class SamplingRecommender(BaseRecommender):
         
         # For small datasets, don't use sampling
         if len(current_results) <= self.min_sample_size:
-            return self._compute_full_scores(current_results)
+            return self._compute_full_scores(current_results, top_k=top_k)
         
         # Generate hash for caching
         df_hash = pd.util.hash_pandas_object(current_results).sum()
@@ -94,7 +95,7 @@ class SamplingRecommender(BaseRecommender):
         sorted_df = current_results_copy.sort_values('sampling_score', ascending=False)
         
         # Apply output limiting
-        result_df = self._limit_output(sorted_df.drop(columns=['sampling_score']))
+        result_df = self._limit_output(sorted_df.drop(columns=['sampling_score']), top_k=top_k)
         
         return result_df
     
@@ -335,7 +336,7 @@ class SamplingRecommender(BaseRecommender):
         
         return full_scores
     
-    def _compute_full_scores(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _compute_full_scores(self, df: pd.DataFrame, top_k: Optional[int] = None) -> pd.DataFrame:
         """Compute full scores for small datasets without sampling."""
         scores = self._compute_variance_scores(df)
         
@@ -343,7 +344,7 @@ class SamplingRecommender(BaseRecommender):
         df_copy['sampling_score'] = scores
         sorted_df = df_copy.sort_values('sampling_score', ascending=False)
         
-        return self._limit_output(sorted_df.drop(columns=['sampling_score']))
+        return self._limit_output(sorted_df.drop(columns=['sampling_score']), top_k=top_k)
     
     def get_sample_statistics(self) -> Dict[str, Any]:
         """Get statistics about sampling behavior."""

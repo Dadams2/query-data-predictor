@@ -45,12 +45,13 @@ class HierarchicalRecommender(BaseRecommender):
         self._fine_cache = {}
         self._last_processed_hash = None
     
-    def recommend_tuples(self, current_results: pd.DataFrame, **kwargs) -> pd.DataFrame:
+    def recommend_tuples(self, current_results: pd.DataFrame, top_k: Optional[int] = None, **kwargs) -> pd.DataFrame:
         """
         Recommend tuples using hierarchical approach.
         
         Args:
             current_results: DataFrame with the current query's results
+            top_k: Number of tuples to return. If provided, overrides config settings.
             **kwargs: Additional keyword arguments
             
         Returns:
@@ -63,7 +64,7 @@ class HierarchicalRecommender(BaseRecommender):
         
         # For small datasets, skip hierarchy
         if len(current_results) <= self.min_coarse_candidates:
-            return self._apply_fine_grained_analysis(current_results)
+            return self._apply_fine_grained_analysis(current_results, top_k=top_k)
         
         # Generate hash for caching
         df_hash = pd.util.hash_pandas_object(current_results).sum()
@@ -71,13 +72,17 @@ class HierarchicalRecommender(BaseRecommender):
         # Check cache
         if df_hash == self._last_processed_hash and df_hash in self._fine_cache:
             logger.debug("Using cached hierarchical results")
-            return self._fine_cache[df_hash]
+            cached_result = self._fine_cache[df_hash]
+            # Apply top_k if provided, otherwise return cached result
+            if top_k is not None:
+                return cached_result.head(top_k)
+            return cached_result
         
         # Step 1: Coarse-grained filtering
         coarse_candidates = self._apply_coarse_grained_filtering(current_results)
         
         # Step 2: Fine-grained analysis on candidates
-        result_df = self._apply_fine_grained_analysis(coarse_candidates)
+        result_df = self._apply_fine_grained_analysis(coarse_candidates, top_k=top_k)
         
         # Cache results
         self._fine_cache[df_hash] = result_df
@@ -220,25 +225,32 @@ class HierarchicalRecommender(BaseRecommender):
         top_indices = np.argsort(scores)[-target_size:]
         return df.iloc[top_indices].copy()
     
-    def _apply_fine_grained_analysis(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _apply_fine_grained_analysis(self, df: pd.DataFrame, top_k: Optional[int] = None) -> pd.DataFrame:
         """
         Apply detailed fine-grained analysis on candidate set.
         
         Args:
             df: Candidate DataFrame
+            top_k: Number of tuples to return. If provided, overrides config settings.
             
         Returns:
             DataFrame with final recommendations
         """
         if self.fine_method == 'similarity':
-            return self._similarity_analysis(df)
+            result = self._similarity_analysis(df)
         elif self.fine_method == 'variance':
-            return self._variance_analysis(df)
+            result = self._variance_analysis(df)
         elif self.fine_method == 'entropy':
-            return self._entropy_analysis(df)
+            result = self._entropy_analysis(df)
         else:
             # Default to similarity
-            return self._similarity_analysis(df)
+            result = self._similarity_analysis(df)
+        
+        # Apply top_k limiting if specified
+        if top_k is not None and len(result) > top_k:
+            result = result.head(top_k)
+        
+        return result
     
     def _similarity_analysis(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply similarity-based fine-grained analysis."""

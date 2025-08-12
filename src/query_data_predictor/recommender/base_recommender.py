@@ -33,12 +33,13 @@ class BaseRecommender(ABC):
         self.config = config
     
     @abstractmethod
-    def recommend_tuples(self, current_results: pd.DataFrame, **kwargs) -> pd.DataFrame:
+    def recommend_tuples(self, current_results: pd.DataFrame, top_k: Optional[int] = None, **kwargs) -> pd.DataFrame:
         """
         Recommend tuples for the next query based on the current query's results.
         
         Args:
             current_results: DataFrame with the current query's results
+            top_k: Number of tuples to return. If provided, overrides config settings.
             **kwargs: Additional keyword arguments
             
         Returns:
@@ -71,12 +72,14 @@ class BaseRecommender(ABC):
             # Default to top_k
             return rec_config.get('top_k', 10)
     
-    def _limit_output(self, df: pd.DataFrame, config_key: str = 'recommendation') -> pd.DataFrame:
+    # TODO limit output is kind of a dumb idea as if we do a cheating reccomender that needs to know what size 
+    def _limit_output(self, df: pd.DataFrame, top_k: Optional[int] = None, config_key: str = 'recommendation') -> pd.DataFrame:
         """
         Limit the output DataFrame to the configured number of tuples.
         
         Args:
             df: Input DataFrame to limit
+            top_k: Number of tuples to return. If provided, overrides config settings.
             config_key: Configuration key to look for settings (default: 'recommendation')
             
         Returns:
@@ -84,8 +87,12 @@ class BaseRecommender(ABC):
         """
         if df.empty:
             return df
-            
-        target_size = self._determine_output_size(len(df), config_key)
+        
+        # If top_k is explicitly provided, use it directly
+        if top_k is not None:
+            target_size = top_k
+        else:
+            target_size = self._determine_output_size(len(df), config_key)
         
         if len(df) <= target_size:
             return df

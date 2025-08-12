@@ -43,12 +43,13 @@ class FrequencyRecommender(BaseRecommender):
         self.cache_enabled = freq_config.get('cache_enabled', True)
         self.max_unique_values = freq_config.get('max_unique_values', 50)
     
-    def recommend_tuples(self, current_results: pd.DataFrame, **kwargs) -> pd.DataFrame:
+    def recommend_tuples(self, current_results: pd.DataFrame, top_k: Optional[int] = None, **kwargs) -> pd.DataFrame:
         """
         Recommend tuples using cached frequency computations.
         
         Args:
             current_results: DataFrame with the current query's results
+            top_k: Number of tuples to return. If provided, overrides config settings.
             **kwargs: Additional keyword arguments
             
         Returns:
@@ -86,7 +87,7 @@ class FrequencyRecommender(BaseRecommender):
         sorted_df = current_results_copy.sort_values('frequency_score', ascending=False)
         
         # Apply output limiting
-        result_df = self._limit_output(sorted_df.drop(columns=['frequency_score']))
+        result_df = self._limit_output(sorted_df.drop(columns=['frequency_score']), top_k=top_k)
         
         return result_df
     

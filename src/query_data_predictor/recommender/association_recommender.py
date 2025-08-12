@@ -1,5 +1,5 @@
 import pandas as pd
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from mlxtend.frequent_patterns import fpgrowth, association_rules
 from mlxtend.preprocessing import TransactionEncoder
 import logging
@@ -21,7 +21,7 @@ class AssociationRecommender(BaseRecommender):
         self.metric = assoc_config.get('metric', 'confidence')
         self.max_unique_values = assoc_config.get('max_unique_values', 15)
 
-    def recommend_tuples(self, current_results: pd.DataFrame, **kwargs) -> pd.DataFrame:
+    def recommend_tuples(self, current_results: pd.DataFrame, top_k: Optional[int] = None, **kwargs) -> pd.DataFrame:
         """
         Recommend next queries based on the user's query history.
         """
@@ -61,7 +61,7 @@ class AssociationRecommender(BaseRecommender):
 
         # Convert the recommendations to a dataframe
         recs_df = self._recommendations_to_df(recommendations, list(current_results.columns))
-        return self._limit_output(recs_df)
+        return self._limit_output(recs_df, top_k=top_k)
 
     def _limit_unique_values(self, df: pd.DataFrame) -> pd.DataFrame:
         df_limited = df.copy()

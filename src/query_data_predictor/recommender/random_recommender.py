@@ -28,12 +28,13 @@ class RandomRecommender(BaseRecommender):
         random_config = self.config.get('random', {})
         self.random_seed = random_config.get('random_seed', 42)
     
-    def recommend_tuples(self, current_results: pd.DataFrame, **kwargs) -> pd.DataFrame:
+    def recommend_tuples(self, current_results: pd.DataFrame, top_k: Optional[int] = None, **kwargs) -> pd.DataFrame:
         """
         Recommend tuples by randomly selecting from the current query results.
         
         Args:
             current_results: DataFrame with the current query's results
+            top_k: Number of tuples to return. If provided, overrides config settings.
             **kwargs: Additional keyword arguments
                 - random_seed: Override the random seed
             
@@ -49,7 +50,10 @@ class RandomRecommender(BaseRecommender):
         random_seed = kwargs.get('random_seed', self.random_seed)
         
         # Determine how many tuples to select
-        target_size = self._determine_output_size(len(current_results))
+        if top_k is not None:
+            target_size = top_k
+        else:
+            target_size = self._determine_output_size(len(current_results))
         
         # Ensure we don't try to select more tuples than available
         n_select = min(target_size, len(current_results))

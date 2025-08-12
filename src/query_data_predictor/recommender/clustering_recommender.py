@@ -31,12 +31,13 @@ class ClusteringRecommender(BaseRecommender):
         self.scaler = StandardScaler()
         self.label_encoders = {}
     
-    def recommend_tuples(self, current_results: pd.DataFrame, **kwargs) -> pd.DataFrame:
+    def recommend_tuples(self, current_results: pd.DataFrame, top_k: Optional[int] = None, **kwargs) -> pd.DataFrame:
         """
         Recommend tuples by clustering the current results and selecting representative tuples.
         
         Args:
             current_results: DataFrame with the current query's results
+            top_k: Number of tuples to return. If provided, overrides config settings.
             **kwargs: Additional keyword arguments
                 - n_clusters: Override the number of clusters from config
             
@@ -54,7 +55,10 @@ class ClusteringRecommender(BaseRecommender):
         
         # Determine number of clusters if not specified
         if n_clusters is None:
-            target_size = self._determine_output_size(len(current_results))
+            if top_k is not None:
+                target_size = top_k
+            else:
+                target_size = self._determine_output_size(len(current_results))
             n_clusters = min(target_size, len(current_results))
         
         # Ensure we don't have more clusters than data points
@@ -81,7 +85,7 @@ class ClusteringRecommender(BaseRecommender):
             )
             
             # Apply final output limiting
-            return self._limit_output(recommendations)
+            return self._limit_output(recommendations, top_k=top_k)
             
         except Exception as e:
             # If clustering fails, fall back to random selection
