@@ -168,12 +168,15 @@ class ExperimentRunner:
             "timestamp": None,
             "error_message": None,
         }
+        # if reccomendation mode is cheating set topk to be length of future results otherwise let reccomenders determine   
+        top_k = len(future_results) if self.config.get('experiment', {}).get('mode', '') == 'cheating' else None
+        # TODO this should probably go somewhere else
         try:
             timeout_seconds = 30 if len(current_results) < 100 else 120
             with self._timeout(timeout_seconds):
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    recommended_results = recommender.recommend_tuples(current_results, top_k=gap)
+                    recommended_results = recommender.recommend_tuples(current_results, top_k=top_k)
             execution_time = time.time() - start_time
             result_record["recommended_results"] = recommended_results.to_dict("records") if isinstance(recommended_results, pd.DataFrame) else recommended_results
             result_record["execution_time"] = execution_time
