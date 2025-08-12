@@ -11,8 +11,8 @@ output:
 
 experiment:
   name: 'sample_experiment'
-  prediction_gap: [1] 
-  sessions: [11305, 11311] 
+  prediction_gap: [1, 2, 3, 4, 5] 
+  sessions: [11305, 11073] 
   data_path: 'data/datasets'
   session_selection_strategy: diverse
   recommenders: [dummy, random, clustering, query_expansion]
