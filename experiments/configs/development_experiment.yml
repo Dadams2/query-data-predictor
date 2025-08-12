@@ -1,0 +1,59 @@
+# Configuration for query prediction experiment
+# Adjust parameters as needed for your specific use case
+
+output:
+  # Directory where results will be saved
+  # Save predictions, metrics, and summaries
+  save_predictions: true
+  save_metrics: false
+  save_summaries: false
+  output_directory: 'results/rewrite/simple_experiment'
+
+experiment:
+  name: 'sample_experiment'
+  prediction_gap: [1] 
+  sessions: [11305, 11311] 
+  data_path: 'data/datasets'
+  session_selection_strategy: diverse
+  recommenders: [dummy, random, clustering, query_expansion]
+  include_query_text: true
+  store_intermediate_states: false
+
+discretization:
+  enabled: true
+  method: 'equal_width'  # Options: equal_width, equal_freq, kmeans
+  bins: 5
+  save_params: true
+  params_path: 'discretization_params.pkl'
+
+association_rules:
+  enabled: true
+  min_support: 0.1
+  metric: 'confidence'  # Options: support, confidence, lift, leverage, conviction
+  min_threshold: 0.7
+  max_len: null  # null for no limit, integer for max rule length
+
+summaries:
+  enabled: true
+  desired_size: 5  # Number of summaries to generate
+  weights: null  # Custom weights for attributes, null for equal weights
+
+interestingness:
+  enabled: true
+  measures: ["variance", "simpson", "shannon"]
+
+evaluation:
+  jaccard_threshold: 0.5
+  column_weights: null  # Custom weights for columns, null for equal weights
+
+recommendation:
+  mode: 'top_quartile'
+
+clustering:
+  n_clusters: null  # Number of clusters, null for auto-determination
+  random_state: 42
+  max_iter: 300
+  n_init: 10
+
+random:
+  random_seed: 42
