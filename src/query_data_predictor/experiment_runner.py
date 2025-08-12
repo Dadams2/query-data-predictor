@@ -104,7 +104,7 @@ class ExperimentRunner:
                 future_query_text = self._get_query_text(session_id, future_id) if include_query_text else ""
                 # Test each recommender with the adaptive target size
                 for recommender_name, recommender in self.recommenders.items():
-                    print(f"Running {recommender_name} with gap {gap}")
+                    logger.debug(f"Running {recommender_name} with gap {gap}")
                     result = self.get_results(
                         session_id=session_id,
                         current_query_id=current_id,
