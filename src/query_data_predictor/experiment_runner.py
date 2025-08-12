@@ -81,6 +81,8 @@ class ExperimentRunner:
         logger.info(f"Session {session_id} has {len(query_ids)} queries")
 
         for gap in self.gap:
+
+            logger.info(f"Running session {session_id} with gap {gap}")
             self.session_predict_with_gap(session_id, gap)
 
         return {"success": True, "session_id": session_id}
