@@ -181,7 +181,7 @@ class InterestingnessRecommender(BaseRecommender):
             df[column] = df[column].apply(lambda x: f"{column}_{x}")
         return df
 
-    def recommend_tuples(self, current_results: pd.DataFrame) -> pd.DataFrame:
+    def recommend_tuples(self, current_results: pd.DataFrame, top_k: Optional[int] = None, **kwargs) -> pd.DataFrame:
         """
         Recommend tuples based on interestingness scores.
         
@@ -223,7 +223,11 @@ class InterestingnessRecommender(BaseRecommender):
         if score_threshold > 0:
             scored_df = scored_df[scored_df['interestingness_score'] >= score_threshold]
         
-        output_size = self._determine_output_size(len(scored_df), 'recommendation')
+
+        if top_k is not None:
+            output_size = top_k
+        else:
+            output_size = self._determine_output_size(len(scored_df), 'recommendation')
 
         # Return top-k tuples (excluding the score column)
         result_df = scored_df.head(output_size).drop(columns=['interestingness_score'])
