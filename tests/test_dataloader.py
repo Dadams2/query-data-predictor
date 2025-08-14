@@ -167,6 +167,42 @@ def test_session_structure(sample_dataset_dir):
     query_positions = sorted(session_data["query_position"].tolist())
     assert query_positions == [0, 1, 3, 5]  # Has gaps
 
+def test_get_results_for_query_with_text(sample_dataset_dir):
+    """Test retrieving results for a specific query with query text."""
+    loader = DataLoader(sample_dataset_dir)
+    
+    # Test retrieving query results with text
+    result, query_text = loader.get_results_for_query_with_text(1001, 0)
+    assert isinstance(result, pd.DataFrame)
+    assert isinstance(query_text, str)
+    assert len(result) == 3  # result1_df has 3 rows
+    assert "ra" in result.columns
+    assert "dec" in result.columns
+    assert "objid" in result.columns
+    assert query_text == "SELECT ra,dec,type FROM PhotoObj WHERE ra > 359"
+    
+    # Test retrieving another query result with text
+    result2, query_text2 = loader.get_results_for_query_with_text(1001, 1)
+    assert isinstance(result2, pd.DataFrame)
+    assert isinstance(query_text2, str)
+    assert len(result2) == 2  # result2_df has 2 rows
+    assert query_text2 == "SELECT ra,dec,type FROM PhotoObj WHERE dec > 35"
+    
+    # Test with different session
+    result3, query_text3 = loader.get_results_for_query_with_text(1002, 0)
+    assert isinstance(result3, pd.DataFrame)
+    assert isinstance(query_text3, str)
+    assert len(result3) == 3  # result5_df has 3 rows
+    assert query_text3 == "SELECT ra,dec,type FROM PhotoObj WHERE ra < 362"
+    
+    # Test error handling for non-existent query
+    with pytest.raises(ValueError):
+        loader.get_results_for_query_with_text(1001, 100000)
+        
+    # Test error handling for non-existent session
+    with pytest.raises(ValueError):
+        loader.get_results_for_query_with_text(9999, 0)
+
 def test_sample_data():
     """Test the sample_data method."""
     loader = DataLoader(REAL_METADATA)

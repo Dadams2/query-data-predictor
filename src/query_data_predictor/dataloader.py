@@ -4,6 +4,7 @@ import numpy as np
 import pickle
 import pathlib
 import logging
+from typing import List, Dict, Tuple
 from query_data_predictor.importer import DataImporter
 
 logger = logging.getLogger(__name__)
@@ -13,7 +14,16 @@ class DataLoader():
     Class to import data from a CSV file and convert it to a list of dictionaries.
     """
 
-    def __init__(self, dataset_dir: str):
+    def __init__(self, dataset_dir: str) -> None:
+        """
+        Initialize the DataLoader with the directory containing the dataset.
+        Loads the metadata.csv file and prepares the memory cache.
+        
+        Args:
+            dataset_dir (str): Path to the dataset directory containing metadata.csv.
+        Raises:
+            FileNotFoundError: If metadata.csv is not found in the dataset directory.
+        """
         self.dataset_dir = pathlib.Path(dataset_dir)
         # read in metadata.csv 
         self.file_path = self.dataset_dir / "metadata.csv"
@@ -25,50 +35,80 @@ class DataLoader():
         logger.info(f"DataLoader initialized with {len(self.metadata)} sessions from {self.file_path}")
     
     # TODO LRU cache for results per session or something
+    def _load_query_results(self, session_id: int, query_id: int) -> tuple[np.ndarray, pd.Series]:
+        """
+        Internal helper to load query results and row for a given session/query.
+        
+        Args:
+            session_id (int): The ID of the session.
+            query_id (int): The ID of the query.
+        
+        Returns:
+            tuple[np.ndarray, pd.Series]: The query results and the corresponding row as a pandas Series.
+        
+        Raises:
+            ValueError: If the query or required columns are not found.
+            FileNotFoundError: If the results file is not found.
+        """
+        if session_id not in self.memory_cache:
+            self.get_results_for_session(session_id)
+        
+        data = self.memory_cache[session_id]
+        query_rows = data[
+            (data["session_id"] == session_id) & 
+            (data["query_position"] == query_id)
+        ]
+        if len(query_rows) == 0:
+            raise ValueError(f"Query ID {query_id} not found in session {session_id}")
+        if "results_filepath" not in data.columns:
+            raise ValueError("Metadata does not contain a results_filepath column")
+
+        ## TODO what happens if query rows is more than 1?
+        results_file_path = query_rows["results_filepath"].values[0]
+        results_path = self.dataset_dir / results_file_path
+        if not results_path.exists():
+            raise FileNotFoundError(f"Results file not found: {results_path}")
+        # Load the actual results file
+        with open(results_path, "rb") as f:
+            results = pickle.load(f)
+        return results, query_rows.iloc[0]
+
     def get_results_for_query(self, session_id: int, query_id: int) -> np.ndarray:
         """
         Get the results for a specific query in a session.
         
         Args:
-            session_id: The ID of the session
-            query_id: The ID of the query
-            
+            session_id (int): The ID of the session.
+            query_id (int): The ID of the query.
+        
         Returns:
-            The query results as a numpy array
+            np.ndarray: The query results as a numpy array.
         """
-        # Find the specific query in the metadata
-
-        if session_id not in self.memory_cache:
-            self.get_results_for_session(session_id)
-        
-        data = self.memory_cache[session_id]
-
-        query_rows = data[
-            (data["session_id"] == session_id) & 
-            (data["query_position"] == query_id)
-        ]
-        
-        if len(query_rows) == 0:
-            raise ValueError(f"Query ID {query_id} not found in session {session_id}")
-        
-        # Get the results file path
-        if "results_filepath" not in data.columns:
-            raise ValueError("Metadata does not contain a results_filepath column")
-        
-        results_file_path = query_rows["results_filepath"].values[0]
-        results_path = self.dataset_dir / results_file_path
-        
-        if not results_path.exists():
-            raise FileNotFoundError(f"Results file not found: {results_path}")
-        
-        # Load and return the actual query results
-        with open(results_path, "rb") as f:
-            results = pickle.load(f)
-        
+        results, _ = self._load_query_results(session_id, query_id)
         return results
 
+    def get_results_for_query_with_text(self, session_id: int, query_id: int) -> tuple[np.ndarray, str]:
+        """
+        Get the results for a specific query with query text included.
+        
+        Args:
+            session_id (int): The ID of the session.
+            query_id (int): The ID of the query.
+        
+        Returns:
+            tuple[np.ndarray, str]: The query results and the query text.
+        
+        Raises:
+            ValueError: If the query text is not found.
+        """
+        results, query_row = self._load_query_results(session_id, query_id)
+        query_text = query_row.get("current_query")
+        if pd.isna(query_text):
+            raise ValueError(f"Query text not found for session {session_id}, query {query_id}")
+        return results, query_text
 
-    def get_sessions(self):
+
+    def get_sessions(self) -> List[int]:
         """
         Get all available sessions with their metadata.
         
@@ -97,7 +137,7 @@ class DataLoader():
         # return sessions
         return self.metadata["session_id"].unique().tolist()
         
-    def get_results_for_session(self, session_id: int):
+    def get_results_for_session(self, session_id: int) -> pd.DataFrame:
         """
         Return all statement results for a given session ID.
         
