@@ -16,6 +16,15 @@ class QueryResultSequence:
         self.dataloader = dataloader
         self.id_cache = {}
 
+    def _iter_id_pairs(self, session_id: str, gap: int = 1) -> Iterator[Tuple[Any, Any]]:
+        """
+        Internal helper that yields (current_query_id, future_query_id) pairs
+        for the given session and gap.
+        """
+        query_ids = self.get_ordered_query_ids(session_id)
+        for i in range(len(query_ids) - gap):
+            yield query_ids[i], query_ids[i + gap]
+
     def get_ordered_query_ids(self, session_id: str) -> list:
         """
         Returns a list of query IDs in order for the session.
@@ -47,14 +56,26 @@ class QueryResultSequence:
         Yields (current_query_id, future_query_id, current_results, future_results)
         for all valid pairs in the session with the specified gap.
         """
-        query_ids = self.get_ordered_query_ids(session_id)
-        for i in range(len(query_ids) - gap):
-            curr_id = query_ids[i]
-            fut_id = query_ids[i + gap]
+        for curr_id, fut_id in self._iter_id_pairs(session_id, gap):
             curr_res = self.get_query_results(session_id, curr_id)
             fut_res = self.get_query_results(session_id, fut_id)
             if not curr_res.empty and not fut_res.empty:
                 yield curr_id, fut_id, curr_res, fut_res
+
+    def iter_query_result_pairs_with_text(self, session_id: str, gap: int = 1) -> Iterator[Tuple[str, str, pd.DataFrame, pd.DataFrame, str, str]]:
+        """
+        Yields (current_query_id, future_query_id, current_results, future_results, current_query_text, future_query_text)
+        for all valid pairs in the session with the specified gap.
+        """
+        for curr_id, fut_id in self._iter_id_pairs(session_id, gap):
+            try:
+                curr_res, curr_text = self.dataloader.get_results_for_query_with_text(session_id, curr_id)
+                fut_res, fut_text = self.dataloader.get_results_for_query_with_text(session_id, fut_id)
+                if not curr_res.empty and not fut_res.empty:
+                    yield curr_id, fut_id, curr_res, fut_res, curr_text, fut_text
+            except ValueError:
+                # Skip pairs where query text is not available
+                continue
 
     def get_query_pair_with_gap(self, session_id: str, current_query_id: str, gap: int = 1) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
