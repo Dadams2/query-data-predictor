@@ -93,17 +93,14 @@ class ExperimentRunner:
         results = []
         try:
             # Iterate through all valid query pairs with this gap
-            for current_id, future_id, current_results, future_results in \
-                self.query_result_sequence.iter_query_result_pairs(session_id, gap):
+            for current_id, future_id, current_results, future_results, current_query_text, future_query_text in \
+                self.query_result_sequence.iter_query_result_pairs_with_text(session_id, gap):
                 # Skip if current results are empty
                 if current_results.empty:
                     continue
                 # Get the target size (number of tuples in the future query)
                 target_size = len(future_results)
                 logger.debug(f"Testing with target size {target_size} for query pair {current_id}->{future_id}")
-                # Extract query information if needed
-                current_query_text = self._get_query_text(session_id, current_id) if include_query_text else ""
-                future_query_text = self._get_query_text(session_id, future_id) if include_query_text else ""
                 # Test each recommender with the adaptive target size
                 for recommender_name, recommender in self.recommenders.items():
                     logger.debug(f"Running {recommender_name} with gap {gap}")
@@ -132,14 +129,6 @@ class ExperimentRunner:
             logger.error(f"Error in adaptive size gap {gap} experiment for session {session_id}: {str(e)}", exc_info=True)
         return
     
-
-    def _get_query_text(self, session_id: str, query_id: str) -> str:
-        """Extract query text from dataset (placeholder - implement based on your data structure)."""
-        # This would need to be implemented based on how your data stores query text
-        # For now, return a placeholder
-        return f"Query {query_id} from session {session_id}"
-
-
     def get_results(self, 
             session_id: str,
             current_query_id: str, 
