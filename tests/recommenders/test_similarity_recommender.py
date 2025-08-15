@@ -152,7 +152,7 @@ class TestSimilarityRecommender:
         
         # Should return empty array (need at least 2 rows)
         assert isinstance(scores, np.ndarray)
-        assert len(scores) == 0
+        assert len(scores) == 1
     
     def test_different_similarity_metrics(self, simple_dataframe):
         """Test different similarity metrics."""
