@@ -51,7 +51,8 @@ class InterestingnessRecommender(BaseRecommender):
             Preprocessed DataFrame
         """
         if self.discretizer and self.config.get('discretization', {}).get('enabled', True):
-            return self.discretizer.discretize_dataframe(df)
+            df_copy = df.copy(deep=False)
+            return self.discretizer.discretize_dataframe(df_copy)
         return df
 
     def compute_frequent_itemsets(self, df: pd.DataFrame, min_support: Optional[float] = None) -> pd.DataFrame:
@@ -156,8 +157,8 @@ class InterestingnessRecommender(BaseRecommender):
         te = TransactionEncoder()
         te_ary = te.fit(transactions).transform(transactions)
         
-        # Create encoded DataFrame with boolean types for FP-Growth compatibility
-        encoded_df = pd.DataFrame(te_ary, columns=te.columns_, dtype=bool)  # Use bool for FP-Growth
+        # Preserve original index so scores map back correctly
+        encoded_df = pd.DataFrame(te_ary, columns=te.columns_, dtype=bool, index=df_with_names.index)
         
         logger.debug(f"Encoded DataFrame: {len(encoded_df)} rows, {len(encoded_df.columns)} columns")
         
@@ -189,49 +190,49 @@ class InterestingnessRecommender(BaseRecommender):
             current_results: DataFrame with current query results
             
         Returns:
-            DataFrame with recommended tuples
+            DataFrame with recommended tuples (from the original results, not discretized)
         """
         # Validate input
         if not isinstance(current_results, pd.DataFrame):
             raise ValueError("current_results must be a pandas DataFrame")
 
-        # discretize the data if enabled
+        # Discretize a separate copy if enabled (do not mutate input)
         processed_df = self.preprocess_data(current_results)
-
 
         if processed_df.empty or len(processed_df) < 2:
             return current_results
-        
-        # Compute frequent itemsets 
+
+        # Compute frequent itemsets
         # TODO: figure out if there should be extra handling for small results sets
         frequent_itemsets, encoded_df, attributes = self.compute_frequent_itemsets(processed_df)
         if frequent_itemsets.empty:
             logger.warning("No frequent itemsets found. Returning empty DataFrame.")
             return pd.DataFrame()
-        
-        scores = self._compute_tuple_interestingness_scores(encoded_df, frequent_itemsets)
-        
-        # sort dataframe by interestingness score as index
-        
-        # Sort by interestingness score and return top-k
-        processed_df['interestingness_score'] = scores
-        
-        # Sort by interestingness score and return top-k
-        scored_df = processed_df.sort_values('interestingness_score', ascending=False)
 
+        # Compute scores aligned to the encoded_df (and thus processed_df) indices
+        scores = self._compute_tuple_interestingness_scores(encoded_df, frequent_itemsets)
+
+        # Apply threshold and sorting using the score series (avoid mutating any DataFrame)
         score_threshold = self.config.get('recommendation', {}).get('score_threshold', 0.0)
         if score_threshold > 0:
-            scored_df = scored_df[scored_df['interestingness_score'] >= score_threshold]
-        
+            scores = scores[scores >= score_threshold]
 
+        # If all filtered out, return empty
+        if scores.empty:
+            return pd.DataFrame()
+
+        # Determine output size
         if top_k is not None:
             output_size = top_k
         else:
-            output_size = self._determine_output_size(len(scored_df), 'recommendation')
+            output_size = self._determine_output_size(len(scores), 'recommendation')
 
-        # Return top-k tuples (excluding the score column)
-        result_df = scored_df.head(output_size).drop(columns=['interestingness_score'])
-        
+        # Sort by score and select top indices
+        top_indices = scores.sort_values(ascending=False).index[:output_size]
+
+        # Return the original (non-discretized) tuples in the ranked order
+        result_df = current_results.loc[top_indices].copy()
+
         return result_df
 
     def _compute_tuple_interestingness_scores(self, encoded_df: pd.DataFrame, frequent_itemsets: pd.DataFrame) -> pd.Series:
