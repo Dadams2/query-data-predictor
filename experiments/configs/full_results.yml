@@ -1,3 +1,4 @@
+
 # Configuration for query prediction experiment
 # Adjust parameters as needed for your specific use case
 
@@ -7,14 +8,13 @@ output:
   save_predictions: true
   save_metrics: false
   save_summaries: false
-  output_directory: 'results/rewrite/simple_experiment'
+  output_directory: 'results/full/simple_experiment'
 
 experiment:
   name: 'sample_experiment'
   # prediction_gap: [1, 2, 3, 4, 5] 
-  prediction_gap: [1] 
-  sessions: [11305, 11073] 
-  # sessions: [11073] 
+  prediction_gap: [1, 2, 3, 4, 5, 6,7,8,9,10,11,12,13,14,15] 
+  sessions: [] # all sessions
   data_path: 'data/datasets'
   session_selection_strategy: diverse
   recommenders: [dummy, random, clustering, query_expansion]

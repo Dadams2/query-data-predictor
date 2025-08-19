@@ -65,6 +65,9 @@ class ExperimentRunner:
 
     def run_experiment(self):
 
+        if len(self.sessions) == 0:
+            # get all session IDs from the data loader
+            self.sessions = self.dataloader.get_all_session_ids()
         for session in self.sessions:
             self.run_session_experiment(session)
         return
