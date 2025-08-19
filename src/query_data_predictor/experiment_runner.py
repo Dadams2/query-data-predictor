@@ -13,6 +13,7 @@ import time
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Union
+from dotenv import load_dotenv
 
 from query_data_predictor.dataloader import DataLoader
 from query_data_predictor.query_result_sequence import QueryResultSequence
@@ -60,6 +61,7 @@ class ExperimentRunner:
         self.dataloader = DataLoader(str(self.dataset_dir))
         self.query_result_sequence = QueryResultSequence(self.dataloader)
         self.metrics = EvaluationMetrics(config['evaluation'])
+        self.query_runner = None # only initalise if we need to
         self.recommenders = self._initialize_recommenders()
         logger.info(f"Initialized ExperimentRunner with config: {self.config}")
 
@@ -80,6 +82,10 @@ class ExperimentRunner:
         if len(query_ids) < 2:
             logger.warning(f"Session {session_id} has fewer than 2 queries, skipping")
             return {"error": "Insufficient queries", "session_id": session_id}
+
+        if len(self.recommenders) == 0:
+            logger.warning(f"Session {session_id} has no recommenders, skipping")
+            return {"error": "No recommenders available", "session_id": session_id}
 
         logger.info(f"Session {session_id} has {len(query_ids)} queries")
 
@@ -170,7 +176,7 @@ class ExperimentRunner:
             with self._timeout(timeout_seconds):
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    recommended_results = recommender.recommend_tuples(current_results, top_k=top_k)
+                    recommended_results = recommender.recommend_tuples(current_results, top_k=top_k, current_query_text=current_query_text, future_query_text=future_query_text)
             execution_time = time.time() - start_time
             result_record["recommended_results"] = recommended_results.to_dict("records") if isinstance(recommended_results, pd.DataFrame) else recommended_results
             result_record["execution_time"] = execution_time
@@ -188,42 +194,69 @@ class ExperimentRunner:
         return result_record
      
 
-    def _initialize_recommenders(self) -> Dict[str, Any]:
-        """Initialize all recommender instances."""
-        # Create a real data QueryRunner for QueryExpansionRecommender and RandomTableRecommender
-        # Use the first available session as the data source
-        # sessions = self.dataloader.get_sessions()
-        # if sessions:
-        #     # Use the first session as the data source for expansion queries
-        #     first_session = sessions[0]
-        #     real_query_runner = RealDataQueryRunner(self.dataloader, first_session)
-        #     logger.info(f"Using session {first_session} as data source for out-of-results recommenders")
-        # else:
-        #     # Fallback to mock if no sessions available
-        #     real_query_runner = MockQueryRunner()
-        #     logger.warning("No sessions available, using mock data for out-of-results recommenders")
+    def _initialize_recommenders(self) -> Dict[str, BaseRecommender]:
+        """Initialize only the recommenders specified in the experiment config."""
         
-        return {
-            # # Out-of-results recommenders (need QueryRunner)
-            # 'query_expansion': QueryExpansionRecommender(
-            #     self.recommender_config, 
-            #     query_runner=real_query_runner
-            # ),
-            # 'random_table_baseline': RandomTableRecommender(
-            #     self.recommender_config,
-            #     query_runner=real_query_runner
-            # ),
-            
-            # In-results recommenders (work with current results only)
-            'dummy': DummyRecommender(self.config),
-            'random': RandomRecommender(self.config),
-            'clustering': ClusteringRecommender(self.config),
-            'interestingness': InterestingnessRecommender(self.config),
-            'similarity': SimilarityRecommender(self.config),
-            'frequency': FrequencyRecommender(self.config),
-            'sampling': SamplingRecommender(self.config)
+        # Define all available recommenders with their classes
+        available_recommenders = {
+            'dummy': DummyRecommender,
+            'random': RandomRecommender,
+            'clustering': ClusteringRecommender,
+            'interestingness': InterestingnessRecommender,
+            'similarity': SimilarityRecommender,
+            'frequency': FrequencyRecommender,
+            'sampling': SamplingRecommender,
+            'query_expansion': QueryExpansionRecommender,
+            'random_table_baseline': RandomTableRecommender,
         }
+        
+        # Get the list of recommenders from config
+        recommender_names = self.config.get('experiment', {}).get('recommenders', [])
+        
+        # Initialize only the specified recommenders
+        initialized_recommenders = {}
+        for name in recommender_names:
+            if name in available_recommenders:
+                try:
+                    recommender_class = available_recommenders[name]
+                    
+                    # Handle recommenders that need special initialization (QueryRunner)
+                    if name in ['query_expansion', 'random_table_baseline']:
+                        query_runner = self._get_query_runner()
+                        initialized_recommenders[name] = recommender_class(self.config, query_runner=query_runner)
+                        logger.warning(f"Skipping {name} - QueryRunner implementation needed")
+                        continue
+                    else:
+                        initialized_recommenders[name] = recommender_class(self.config)
+                    
+                    logger.info(f"Initialized recommender: {name}")
+                except Exception as e:
+                    logger.error(f"Failed to initialize recommender {name}: {str(e)}")
+            else:
+                logger.warning(f"Unknown recommender '{name}' specified in config")
+    
+        logger.info(f"Initialized {len(initialized_recommenders)} recommenders: {list(initialized_recommenders.keys())}")
+        return initialized_recommenders
 
+    # TODO: add overrides for dotenv stuff elsewhere
+    def _get_query_runner(self) -> QueryRunner:
+        if self.query_runner == None: 
+            # TODO have this actually mean something
+            query_runner_config = self.config.get('query_runner', {})
+            load_dotenv()
+            DB_NAME = os.getenv("PG_DATA")
+            DB_USER = os.getenv("PG_DATA_USER")
+            DB_HOST = os.getenv("PG_HOST", "localhost")
+            DB_PORT = os.getenv("PG_PORT", "5432")
+            self.query_runner = QueryRunner(
+                DB_NAME,
+                DB_USER,
+                host=DB_HOST,
+                port=DB_PORT,
+                **query_runner_config
+            )
+            self.query_runner.connect()
+        return self.query_runner
 
     @contextmanager
     def _timeout(self, seconds):

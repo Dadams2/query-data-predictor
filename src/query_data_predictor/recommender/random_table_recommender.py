@@ -66,7 +66,7 @@ class RandomTableRecommender(BaseRecommender):
         # Cache for table information
         self._table_info_cache = {}
     
-    def recommend_tuples(self, current_results: pd.DataFrame, **kwargs) -> pd.DataFrame:
+    def recommend_tuples(self, current_results: pd.DataFrame, top_k: Optional[int] = None, **kwargs) -> pd.DataFrame:
         """
         Recommend tuples by randomly sampling from the same table as current results.
         

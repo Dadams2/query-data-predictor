@@ -136,7 +136,7 @@ class QueryExpansionRecommender(BaseRecommender):
         self._query_templates = {}
         self._last_session_context = None
     
-    def recommend_tuples(self, current_results: pd.DataFrame, **kwargs) -> pd.DataFrame:
+    def recommend_tuples(self, current_results: pd.DataFrame, top_k: Optional[int] = None, **kwargs) -> pd.DataFrame:
         """
         Recommend tuples by executing expansion queries against the database.
         
@@ -148,7 +148,9 @@ class QueryExpansionRecommender(BaseRecommender):
             DataFrame with recommended tuples from database queries
         """
         self._validate_input(current_results)
-        
+        current_query_text = kwargs.get('current_query_text', None)
+        future_query_text = kwargs.get('future_query_text', None)
+
         if current_results.empty:
             return pd.DataFrame()
         
@@ -176,7 +178,7 @@ class QueryExpansionRecommender(BaseRecommender):
             )
             
             # Apply output limiting
-            return self._limit_output(final_recommendations)
+            return self._limit_output(final_recommendations, top_k=top_k)
             
         except Exception as e:
             logger.error(f"Error in query expansion recommendation: {e}", exc_info=True)

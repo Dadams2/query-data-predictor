@@ -9,15 +9,18 @@ output:
   save_summaries: false
   output_directory: 'results/rewrite/simple_experiment'
 
+query_runner:
+  max_concurrent_queries: 5
+  timeout: 30
+
 experiment:
   name: 'sample_experiment'
-  # prediction_gap: [1, 2, 3, 4, 5] 
-  prediction_gap: [1] 
+  prediction_gap: [1, 2, 3, 4, 5, 10] 
   sessions: [11305, 11073] 
   # sessions: [11073] 
   data_path: 'data/datasets'
   session_selection_strategy: diverse
-  recommenders: [dummy, random, clustering, query_expansion]
+  recommenders: [query_expansion]
   include_query_text: true
   store_intermediate_states: false
 
