@@ -1679,9 +1679,9 @@ class RecommenderExperimentRunner:
             }
             
             # Test all query pairs with this gap
-            query_pairs = list(self.query_result_sequence.iter_query_result_pairs(session_id, gap))
-            
-            for current_id, future_id, current_results, future_results in query_pairs:
+            query_pairs = list(self.query_result_sequence.iter_query_result_pairs_with_text(session_id, gap))
+
+            for current_id, future_id, current_results, future_results, current_text, future_text in query_pairs:
                 if current_results.empty:
                     continue
                 
@@ -1753,7 +1753,7 @@ class RecommenderExperimentRunner:
                         current_context = QueryContext(
                             session_id=session_id,
                             query_position=current_id,
-                            query_text=f"Query {current_id} from session {session_id}",
+                            query_text=f"{current_text}",
                             query_hash=self._hash_string(f"Query {current_id}"),
                             result_set_size=len(current_results)
                         )
@@ -1761,7 +1761,7 @@ class RecommenderExperimentRunner:
                         future_context = QueryContext(
                             session_id=session_id,
                             query_position=future_id,
-                            query_text=f"Query {future_id} from session {session_id}",
+                            query_text=f"{future_text}",
                             query_hash=self._hash_string(f"Query {future_id}"),
                             result_set_size=len(future_results)
                         )
