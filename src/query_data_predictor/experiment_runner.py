@@ -30,7 +30,8 @@ from query_data_predictor.recommender import (
     RandomTableRecommender,
     SimilarityRecommender,
     FrequencyRecommender,
-    SamplingRecommender
+    SamplingRecommender,
+    MultiDimensionalInterestingnessRecommender
 )
 from query_data_predictor.query_runner import QueryRunner
 
@@ -208,6 +209,7 @@ class ExperimentRunner:
             'sampling': SamplingRecommender,
             'query_expansion': QueryExpansionRecommender,
             'random_table_baseline': RandomTableRecommender,
+            'multidimensional_interestingness': MultiDimensionalInterestingnessRecommender,
         }
         
         # Get the list of recommenders from config
