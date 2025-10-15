@@ -67,6 +67,543 @@ class ResultsAnalyzer:
             },
             'summary': self.get_results_summary()
         }
+
+    def analyze_simple(self):
+        """
+        Run a simplified analysis that evaluates predictions under three matching
+        scenarios: 'raw', 'close', and 'similarity'. For each session and scenario
+        create subfolders with plots and CSV summaries.
+        """
+        logger.info("Starting simple analysis for scenarios: raw, close, similarity")
+
+        # Load results if not already loaded
+        if not self.results_data:
+            self._load_results()
+
+        if not self.results_data:
+            raise ValueError("No results loaded for analysis")
+
+        # Prepare output mapping
+        output_dirs = {}
+
+        # For each session, compute metrics per scenario
+        scenarios = ['raw', 'close', 'similarity']
+        eval_cfg = self.config.get('evaluation', {}) if isinstance(self.config, dict) else {}
+        base_jaccard = eval_cfg.get('jaccard_threshold', 0.5)
+
+        for session_id, session_data in self.results_data.items():
+            logger.info(f"Simple analysis for session {session_id}")
+            session_base = self._get_analysis_base_dir() / f"session_{session_id}"
+            session_base.mkdir(parents=True, exist_ok=True)
+
+            # Build flat list of records to iterate
+            flat_records = []
+            for gap, gap_data in session_data.items():
+                if not isinstance(gap_data, list):
+                    continue
+                for rec in gap_data:
+                    flat_records.append((str(gap), rec))
+
+            if not flat_records:
+                logger.warning(f"No records for session {session_id}")
+                continue
+
+            # For each scenario create outputs
+            for scenario in scenarios:
+                scenario_dir = session_base / scenario
+                scenario_dir.mkdir(parents=True, exist_ok=True)
+
+                # Accumulators for per-query metrics and per-gap metrics
+                per_query_rows = []
+                per_gap_agg = {}
+
+                query_idx = 0
+                for gap, rec in flat_records:
+                    recommender = rec.get('recommender_name', 'unknown')
+                    current = rec.get('current_results') or []
+                    future = rec.get('future_results') or []
+                    predicted = rec.get('recommended_results') or []
+
+                    current_df = pd.DataFrame(current) if isinstance(current, list) else pd.DataFrame()
+                    future_df = pd.DataFrame(future) if isinstance(future, list) else pd.DataFrame()
+                    pred_df = pd.DataFrame(predicted) if isinstance(predicted, list) else pd.DataFrame()
+
+                    # Compute metrics according to scenario
+                    metrics = self._compute_metrics_for_scenario(pred_df, future_df, scenario, base_jaccard)
+                    
+                    # Compute overlap metric
+                    overlap = self._compute_overlap_for_scenario(current_df, future_df, pred_df, scenario, base_jaccard)
+
+                    row = {
+                        'session_id': session_id,
+                        'gap': gap,
+                        'query_number': query_idx,
+                        'recommender': recommender,
+                        'accuracy': metrics['accuracy'],
+                        'precision': metrics['precision'],
+                        'recall': metrics['recall'],
+                        'f1_score': metrics['f1'],
+                        'overlap': overlap
+                    }
+                    per_query_rows.append(row)
+
+                    # Aggregate per gap
+                    gap_int = int(gap) if str(gap).isdigit() else -1
+                    if gap_int not in per_gap_agg:
+                        per_gap_agg[gap_int] = {'accuracy': [], 'precision': [], 'recall': [], 'f1': [], 'overlap': []}
+                    per_gap_agg[gap_int]['accuracy'].append(metrics['accuracy'])
+                    per_gap_agg[gap_int]['precision'].append(metrics['precision'])
+                    per_gap_agg[gap_int]['recall'].append(metrics['recall'])
+                    per_gap_agg[gap_int]['f1'].append(metrics['f1'])
+                    per_gap_agg[gap_int]['overlap'].append(overlap)
+
+                    query_idx += 1
+
+                # Create DataFrame from per-query rows
+                pq_df = pd.DataFrame(per_query_rows)
+                if pq_df.empty:
+                    logger.warning(f"No metric rows for session {session_id} scenario {scenario}")
+                    continue
+
+                # Save per-query CSV
+                pq_csv = scenario_dir / 'per_query_metrics.csv'
+                pq_df.to_csv(pq_csv, index=False)
+
+                # Plot accuracy by query number
+                try:
+                    fig, ax = plt.subplots(figsize=(10, 4))
+                    ax.plot(pq_df['query_number'], pq_df['accuracy'], marker='o')
+                    ax.set_title(f'Accuracy by Query Number ({scenario}) - Session {session_id}')
+                    ax.set_xlabel('Query Number')
+                    ax.set_ylabel('Accuracy')
+                    ax.set_ylim(0, 1.05)
+                    fig_path = scenario_dir / 'accuracy_by_query_number.png'
+                    fig.tight_layout()
+                    fig.savefig(fig_path, dpi=150)
+                    plt.close(fig)
+                except Exception as e:
+                    logger.error(f"Failed to plot accuracy by query number: {e}")
+
+                # Plot distributions for accuracy/precision/recall/f1
+                try:
+                    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+                    sns.histplot(pq_df['accuracy'], kde=True, ax=axes[0,0]).set_title('Accuracy')
+                    sns.histplot(pq_df['precision'], kde=True, ax=axes[0,1]).set_title('Precision')
+                    sns.histplot(pq_df['recall'], kde=True, ax=axes[1,0]).set_title('Recall')
+                    sns.histplot(pq_df['f1_score'], kde=True, ax=axes[1,1]).set_title('F1 Score')
+                    fig.tight_layout()
+                    dist_path = scenario_dir / 'metric_distributions.png'
+                    fig.savefig(dist_path, dpi=150)
+                    plt.close(fig)
+                except Exception as e:
+                    logger.error(f"Failed to plot metric distributions: {e}")
+
+                # Gap-wise aggregated table and plots
+                gap_rows = []
+                for gap_int, stats in sorted(per_gap_agg.items()):
+                    if gap_int < 0:
+                        continue
+                    gap_row = {
+                        'gap': gap_int,
+                        'accuracy_mean': np.mean(stats['accuracy']) if stats['accuracy'] else 0.0,
+                        'precision_mean': np.mean(stats['precision']) if stats['precision'] else 0.0,
+                        'recall_mean': np.mean(stats['recall']) if stats['recall'] else 0.0,
+                        'f1_mean': np.mean(stats['f1']) if stats['f1'] else 0.0,
+                        'overlap_mean': np.mean(stats['overlap']) if stats['overlap'] else 0.0,
+                    }
+                    gap_rows.append(gap_row)
+
+                gap_df = pd.DataFrame(gap_rows)
+                gap_csv = scenario_dir / 'gap_aggregates.csv'
+                gap_df.to_csv(gap_csv, index=False)
+
+                # Plot gap metrics
+                try:
+                    if not gap_df.empty:
+                        fig, ax = plt.subplots(figsize=(10, 5))
+                        ax.plot(gap_df['gap'], gap_df['accuracy_mean'], label='Accuracy', marker='o')
+                        ax.plot(gap_df['gap'], gap_df['precision_mean'], label='Precision', marker='o')
+                        ax.plot(gap_df['gap'], gap_df['recall_mean'], label='Recall', marker='o')
+                        ax.plot(gap_df['gap'], gap_df['f1_mean'], label='F1', marker='o')
+                        ax.set_xlabel('Gap')
+                        ax.set_ylabel('Metric Mean')
+                        ax.set_title(f'Gap Metrics ({scenario}) - Session {session_id}')
+                        ax.set_ylim(0, 1.05)
+                        ax.legend()
+                        fig.tight_layout()
+                        gap_plot = scenario_dir / 'gap_metrics.png'
+                        fig.savefig(gap_plot, dpi=150)
+                        plt.close(fig)
+                except Exception as e:
+                    logger.error(f"Failed to plot gap metrics: {e}")
+                
+                # Plot overlap metric
+                try:
+                    if not pq_df.empty and 'overlap' in pq_df.columns:
+                        fig, ax = plt.subplots(figsize=(10, 4))
+                        ax.plot(pq_df['query_number'], pq_df['overlap'], marker='o', color='purple')
+                        ax.set_title(f'Overlap by Query Number ({scenario}) - Session {session_id}')
+                        ax.set_xlabel('Query Number')
+                        ax.set_ylabel('Overlap')
+                        ax.set_ylim(0, 1.05)
+                        fig_path = scenario_dir / 'overlap_by_query_number.png'
+                        fig.tight_layout()
+                        fig.savefig(fig_path, dpi=150)
+                        plt.close(fig)
+                except Exception as e:
+                    logger.error(f"Failed to plot overlap: {e}")
+
+                output_dirs[scenario] = str(scenario_dir)
+
+        # Generate cross-session summaries
+        logger.info("Generating cross-session summaries...")
+        self._generate_cross_session_summaries(scenarios)
+
+        logger.info("Simple analysis complete")
+        return {'output_dirs': output_dirs}
+    
+    def _generate_cross_session_summaries(self, scenarios: List[str]):
+        """
+        Generate summary statistics and plots across all sessions for each scenario.
+        
+        Args:
+            scenarios: List of scenario names ('raw', 'close', 'similarity')
+        """
+        summary_base = self._get_analysis_base_dir() / 'summary'
+        summary_base.mkdir(parents=True, exist_ok=True)
+        
+        for scenario in scenarios:
+            logger.info(f"Creating cross-session summary for scenario: {scenario}")
+            scenario_summary_dir = summary_base / scenario
+            scenario_summary_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Collect all per-query metrics across sessions
+            all_session_metrics = []
+            
+            for session_id in self.results_data.keys():
+                session_dir = self._get_analysis_base_dir() / f"session_{session_id}" / scenario
+                metrics_file = session_dir / 'per_query_metrics.csv'
+                
+                if metrics_file.exists():
+                    try:
+                        df = pd.read_csv(metrics_file)
+                        all_session_metrics.append(df)
+                    except Exception as e:
+                        logger.warning(f"Could not load metrics from {metrics_file}: {e}")
+            
+            if not all_session_metrics:
+                logger.warning(f"No metrics found for scenario {scenario}")
+                continue
+            
+            # Combine all metrics
+            combined_df = pd.concat(all_session_metrics, ignore_index=True)
+            
+            # Save combined metrics
+            combined_csv = scenario_summary_dir / 'all_sessions_metrics.csv'
+            combined_df.to_csv(combined_csv, index=False)
+            
+            # Compute overall statistics
+            overall_stats = {
+                'scenario': scenario,
+                'total_queries': len(combined_df),
+                'total_sessions': len(combined_df['session_id'].unique()),
+                'accuracy_mean': combined_df['accuracy'].mean(),
+                'accuracy_std': combined_df['accuracy'].std(),
+                'accuracy_median': combined_df['accuracy'].median(),
+                'precision_mean': combined_df['precision'].mean(),
+                'precision_std': combined_df['precision'].std(),
+                'precision_median': combined_df['precision'].median(),
+                'recall_mean': combined_df['recall'].mean(),
+                'recall_std': combined_df['recall'].std(),
+                'recall_median': combined_df['recall'].median(),
+                'f1_mean': combined_df['f1_score'].mean(),
+                'f1_std': combined_df['f1_score'].std(),
+                'f1_median': combined_df['f1_score'].median(),
+            }
+            
+            if 'overlap' in combined_df.columns:
+                overall_stats['overlap_mean'] = combined_df['overlap'].mean()
+                overall_stats['overlap_std'] = combined_df['overlap'].std()
+                overall_stats['overlap_median'] = combined_df['overlap'].median()
+            
+            # Save overall statistics
+            stats_df = pd.DataFrame([overall_stats])
+            stats_csv = scenario_summary_dir / 'overall_statistics.csv'
+            stats_df.to_csv(stats_csv, index=False)
+            
+            # Plot: Distribution of metrics across all sessions
+            try:
+                fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+                axes = axes.flatten()
+                
+                metrics_to_plot = ['accuracy', 'precision', 'recall', 'f1_score']
+                if 'overlap' in combined_df.columns:
+                    metrics_to_plot.append('overlap')
+                
+                for idx, metric in enumerate(metrics_to_plot):
+                    if idx < len(axes):
+                        ax = axes[idx]
+                        sns.histplot(combined_df[metric], kde=True, ax=ax, bins=20)
+                        ax.set_title(f'{metric.replace("_", " ").title()} Distribution')
+                        ax.set_xlabel(metric.replace("_", " ").title())
+                        ax.set_ylabel('Count')
+                        ax.axvline(combined_df[metric].mean(), color='red', linestyle='--', 
+                                  label=f'Mean: {combined_df[metric].mean():.3f}')
+                        ax.legend()
+                
+                # Hide unused subplots
+                for idx in range(len(metrics_to_plot), len(axes)):
+                    axes[idx].set_visible(False)
+                
+                fig.suptitle(f'Cross-Session Metric Distributions ({scenario})', fontsize=16)
+                fig.tight_layout()
+                dist_plot = scenario_summary_dir / 'cross_session_distributions.png'
+                fig.savefig(dist_plot, dpi=150)
+                plt.close(fig)
+            except Exception as e:
+                logger.error(f"Failed to create cross-session distributions: {e}")
+            
+            # Plot: Boxplot by session
+            try:
+                if len(combined_df['session_id'].unique()) > 1:
+                    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+                    axes = axes.flatten()
+                    
+                    for idx, metric in enumerate(['accuracy', 'precision', 'recall', 'f1_score']):
+                        ax = axes[idx]
+                        sns.boxplot(data=combined_df, x='session_id', y=metric, ax=ax)
+                        ax.set_title(f'{metric.replace("_", " ").title()} by Session')
+                        ax.set_xlabel('Session ID')
+                        ax.set_ylabel(metric.replace("_", " ").title())
+                        ax.tick_params(axis='x', rotation=45)
+                    
+                    fig.suptitle(f'Metrics by Session ({scenario})', fontsize=16)
+                    fig.tight_layout()
+                    session_box_plot = scenario_summary_dir / 'metrics_by_session.png'
+                    fig.savefig(session_box_plot, dpi=150)
+                    plt.close(fig)
+            except Exception as e:
+                logger.error(f"Failed to create session boxplots: {e}")
+            
+            # Aggregate by gap across all sessions
+            if 'gap' in combined_df.columns:
+                try:
+                    gap_agg = combined_df.groupby('gap').agg({
+                        'accuracy': ['mean', 'std', 'count'],
+                        'precision': ['mean', 'std'],
+                        'recall': ['mean', 'std'],
+                        'f1_score': ['mean', 'std']
+                    }).reset_index()
+                    
+                    gap_agg.columns = ['_'.join(col).strip('_') for col in gap_agg.columns.values]
+                    gap_agg_csv = scenario_summary_dir / 'gap_aggregates_all_sessions.csv'
+                    gap_agg.to_csv(gap_agg_csv, index=False)
+                    
+                    # Plot gap metrics across all sessions
+                    fig, ax = plt.subplots(figsize=(10, 6))
+                    ax.errorbar(gap_agg['gap'], gap_agg['accuracy_mean'], 
+                               yerr=gap_agg['accuracy_std'], label='Accuracy', marker='o', capsize=5)
+                    ax.errorbar(gap_agg['gap'], gap_agg['precision_mean'], 
+                               yerr=gap_agg['precision_std'], label='Precision', marker='s', capsize=5)
+                    ax.errorbar(gap_agg['gap'], gap_agg['recall_mean'], 
+                               yerr=gap_agg['recall_std'], label='Recall', marker='^', capsize=5)
+                    ax.errorbar(gap_agg['gap'], gap_agg['f1_score_mean'], 
+                               yerr=gap_agg['f1_score_std'], label='F1', marker='d', capsize=5)
+                    
+                    ax.set_xlabel('Gap')
+                    ax.set_ylabel('Metric Value')
+                    ax.set_title(f'Gap Metrics Across All Sessions ({scenario})')
+                    ax.set_ylim(0, 1.05)
+                    ax.legend()
+                    ax.grid(True, alpha=0.3)
+                    fig.tight_layout()
+                    gap_plot = scenario_summary_dir / 'gap_metrics_all_sessions.png'
+                    fig.savefig(gap_plot, dpi=150)
+                    plt.close(fig)
+                except Exception as e:
+                    logger.error(f"Failed to create gap aggregates: {e}")
+            
+            logger.info(f"Completed cross-session summary for {scenario}")
+        
+        logger.info("Cross-session summaries complete")
+
+    def _compute_metrics_for_scenario(self, predicted: pd.DataFrame, actual: pd.DataFrame, scenario: str, base_jaccard: float) -> Dict[str, float]:
+        """
+        Compute accuracy/precision/recall/f1 for a single prediction/actual pair under the given scenario.
+        Scenarios:
+          - raw: exact row equality across columns
+          - close: at least two columns match exactly for a row
+          - similarity: jaccard similarity of row dictionaries > threshold
+        """
+        # Handle empty cases
+        if actual.empty and predicted.empty:
+            return {'accuracy': 1.0, 'precision': 1.0, 'recall': 1.0, 'f1': 1.0}
+        if actual.empty and not predicted.empty:
+            return {'accuracy': 0.0, 'precision': 0.0, 'recall': 0.0, 'f1': 0.0}
+        if predicted.empty and not actual.empty:
+            return {'accuracy': 0.0, 'precision': 0.0, 'recall': 0.0, 'f1': 0.0}
+
+        # Convert to record lists
+        actual_records = actual.to_dict('records')
+        pred_records = predicted.to_dict('records')
+
+        true_positives = 0
+        matched_pred_indices = set()
+
+        # Define similarity threshold for scenario 'similarity'
+        sim_threshold = base_jaccard if scenario == 'similarity' else 0.0
+
+        for i, a in enumerate(actual_records):
+            for j, p in enumerate(pred_records):
+                if j in matched_pred_indices:
+                    continue
+
+                match = False
+                if scenario == 'raw':
+                    # exact equality: keys must match and values equal
+                    if a.keys() == p.keys() and all(a[k] == p[k] for k in a.keys()):
+                        match = True
+                elif scenario == 'close':
+                    # exactly two column names must match AND values for those columns must match
+                    common_keys = list(set(a.keys()).intersection(set(p.keys())))
+                    if len(common_keys) >= 2:
+                        # Find all pairs of columns where both names match
+                        matching_pairs = [k for k in common_keys if a.get(k) == p.get(k)]
+                        # Need at least 2 columns with matching names AND matching values
+                        if len(matching_pairs) >= 2:
+                            match = True
+                elif scenario == 'similarity':
+                    # jaccard similarity on sets of key=value strings
+                    set_a = set(f"{k}={a[k]}" for k in a.keys())
+                    set_p = set(f"{k}={p[k]}" for k in p.keys())
+                    inter = len(set_a.intersection(set_p))
+                    union = len(set_a.union(set_p))
+                    jacc = inter / union if union > 0 else 0.0
+                    if jacc >= sim_threshold:
+                        match = True
+
+                if match:
+                    true_positives += 1
+                    matched_pred_indices.add(j)
+                    break
+
+        precision = true_positives / len(pred_records) if pred_records else 0.0
+        recall = true_positives / len(actual_records) if actual_records else 0.0
+        f1 = 0.0
+        if precision + recall > 0:
+            f1 = 2 * precision * recall / (precision + recall)
+
+        # accuracy defined as proportion of actual tuples matched
+        accuracy = true_positives / len(actual_records) if actual_records else 0.0
+
+        return {'accuracy': accuracy, 'precision': precision, 'recall': recall, 'f1': f1}
+
+    def _compute_overlap_for_scenario(self, current: pd.DataFrame, actual: pd.DataFrame, 
+                                      predicted: pd.DataFrame, scenario: str, base_jaccard: float) -> float:
+        """
+        Compute overlap metric: proportion of predicted tuples that appear in the
+        inner join of current and actual results.
+        
+        Steps:
+        1. Inner join current and actual (the overlap)
+        2. Check what proportion of predicted tuples are in this overlap
+        
+        Args:
+            current: Current query results
+            actual: Future/actual query results
+            predicted: Predicted results
+            scenario: Matching scenario ('raw', 'close', 'similarity')
+            base_jaccard: Jaccard threshold for similarity scenario
+        
+        Returns:
+            Overlap score between 0 and 1
+        """
+        # Handle empty cases
+        if current.empty or actual.empty:
+            return 0.0
+        if predicted.empty:
+            return 0.0
+        
+        # Step 1: Compute overlap between current and actual
+        # For "raw" scenario, do exact merge
+        if scenario == 'raw':
+            # Try to merge on all common columns
+            common_cols = list(set(current.columns).intersection(set(actual.columns)))
+            if not common_cols:
+                overlap_records = []
+            else:
+                try:
+                    overlap_df = pd.merge(current, actual, on=common_cols, how='inner')
+                    overlap_records = overlap_df.to_dict('records')
+                except Exception:
+                    overlap_records = []
+        else:
+            # For "close" and "similarity", manually find overlapping tuples
+            current_records = current.to_dict('records')
+            actual_records = actual.to_dict('records')
+            overlap_records = []
+            
+            for c_rec in current_records:
+                for a_rec in actual_records:
+                    match = False
+                    if scenario == 'close':
+                        # exactly two column names must match AND values for those columns must match
+                        common_keys = list(set(c_rec.keys()).intersection(set(a_rec.keys())))
+                        if len(common_keys) >= 2:
+                            matching_pairs = [k for k in common_keys if c_rec.get(k) == a_rec.get(k)]
+                            if len(matching_pairs) >= 2:
+                                match = True
+                    elif scenario == 'similarity':
+                        # jaccard similarity
+                        set_c = set(f"{k}={c_rec[k]}" for k in c_rec.keys())
+                        set_a = set(f"{k}={a_rec[k]}" for k in a_rec.keys())
+                        inter = len(set_c.intersection(set_a))
+                        union = len(set_c.union(set_a))
+                        jacc = inter / union if union > 0 else 0.0
+                        if jacc >= base_jaccard:
+                            match = True
+                    
+                    if match:
+                        # Add the merged/combined record to overlap
+                        overlap_records.append(a_rec)  # Use actual record as the reference
+                        break
+        
+        if not overlap_records:
+            return 0.0
+        
+        # Step 2: Check what proportion of predicted tuples are in the overlap
+        pred_records = predicted.to_dict('records')
+        matched_count = 0
+        
+        for p_rec in pred_records:
+            for o_rec in overlap_records:
+                match = False
+                if scenario == 'raw':
+                    if p_rec.keys() == o_rec.keys() and all(p_rec[k] == o_rec[k] for k in p_rec.keys()):
+                        match = True
+                elif scenario == 'close':
+                    # exactly two column names must match AND values for those columns must match
+                    common_keys = list(set(p_rec.keys()).intersection(set(o_rec.keys())))
+                    if len(common_keys) >= 2:
+                        matching_pairs = [k for k in common_keys if p_rec.get(k) == o_rec.get(k)]
+                        if len(matching_pairs) >= 2:
+                            match = True
+                elif scenario == 'similarity':
+                    set_p = set(f"{k}={p_rec[k]}" for k in p_rec.keys())
+                    set_o = set(f"{k}={o_rec[k]}" for k in o_rec.keys())
+                    inter = len(set_p.intersection(set_o))
+                    union = len(set_p.union(set_o))
+                    jacc = inter / union if union > 0 else 0.0
+                    if jacc >= base_jaccard:
+                        match = True
+                
+                if match:
+                    matched_count += 1
+                    break
+        
+        # Return proportion of predicted that are in overlap
+        overlap_score = matched_count / len(pred_records) if pred_records else 0.0
+        return overlap_score
     
     def _load_results(self):
         """Load all JSON result files from the results directory."""
@@ -295,6 +832,9 @@ class ResultsAnalyzer:
             # Generate all plot types
             plot_methods = [
                 ("accuracy_comparison", self._create_accuracy_comparison),
+                ("overlap_accuracy_comparison", self._create_overlap_accuracy_comparison),
+                ("accuracy_by_query_number", self._create_accuracy_by_query_number),
+                ("overlap_accuracy_by_query_number", self._create_overlap_accuracy_by_query_number),
                 ("precision_comparison", self._create_precision_comparison),
                 ("recall_comparison", self._create_recall_comparison),
                 ("f1_comparison", self._create_f1_comparison),
@@ -369,6 +909,7 @@ class ResultsAnalyzer:
         records: List[Dict[str, Any]] = []
         
         # Flatten all records across all gaps for this session
+        query_counter = 0  # Add query number tracking
         for gap, gap_data in session_data.items():
             if not isinstance(gap_data, list):
                 continue
@@ -377,11 +918,13 @@ class ResultsAnalyzer:
                 recommender = rec.get('recommender_name', 'unknown')
                 future = rec.get('future_results') or []
                 predicted = rec.get('recommended_results') or []
+                previous = rec.get('previous_results') or []  # Add previous results for overlap accuracy
                 execution_time = rec.get('execution_time', 0.0)
                 
                 # Convert to DataFrames safely
                 future_df = pd.DataFrame(future) if isinstance(future, list) else pd.DataFrame()
                 pred_df = pd.DataFrame(predicted) if isinstance(predicted, list) else pd.DataFrame()
+                previous_df = pd.DataFrame(previous) if isinstance(previous, list) else pd.DataFrame()
                 
                 # Calculate comprehensive metrics
                 try:
@@ -390,6 +933,9 @@ class ResultsAnalyzer:
                     recall = metrics.recall(pred_df, future_df)
                     f1_score = metrics.f1_score(pred_df, future_df)
                     jaccard = metrics.jaccard_similarity(pred_df, future_df)
+                    
+                    # Calculate overlap accuracy
+                    overlap_accuracy = metrics.overlap_accuracy(previous_df, future_df, pred_df)
                     
                     # Count metrics for additional analysis
                     pred_count = len(pred_df)
@@ -411,7 +957,7 @@ class ResultsAnalyzer:
                     
                 except Exception as e:
                     logger.debug(f"Failed to compute metrics for {session_id} gap {gap} {recommender}: {e}")
-                    accuracy = precision = recall = f1_score = jaccard = 0.0
+                    accuracy = precision = recall = f1_score = jaccard = overlap_accuracy = 0.0
                     pred_count = actual_count = intersection_count = union_count = 0
                     sensitivity = specificity = roc_auc = 0.0
                 
@@ -419,7 +965,9 @@ class ResultsAnalyzer:
                     'session_id': session_id,
                     'gap': str(gap),
                     'recommender': recommender,
+                    'query_number': query_counter,  # Add query number
                     'accuracy': accuracy,
+                    'overlap_accuracy': overlap_accuracy,  # Add overlap accuracy
                     'precision': precision,
                     'recall': recall,
                     'f1_score': f1_score,
@@ -437,6 +985,7 @@ class ResultsAnalyzer:
                 }
                 
                 records.append(record)
+                query_counter += 1  # Increment query number
         
         if not records:
             return pd.DataFrame()
@@ -497,7 +1046,11 @@ class ResultsAnalyzer:
         ax.set_title(f'Accuracy Distribution by Recommender (Session {session_id})')
         ax.set_xlabel('Recommender')
         ax.set_ylabel('Accuracy')
-        ax.set_ylim(0, 1.05)
+        # Dynamic y-axis scaling based on data
+        max_val = df['accuracy'].max()
+        min_val = df['accuracy'].min()
+        margin = (max_val - min_val) * 0.1
+        ax.set_ylim(max(0, min_val - margin), min(1.05, max_val + margin))
         plt.xticks(rotation=45, ha='right')
         
         # Add mean points
@@ -524,7 +1077,11 @@ class ResultsAnalyzer:
         ax.set_title(f'Precision Distribution by Recommender (Session {session_id})')
         ax.set_xlabel('Recommender')
         ax.set_ylabel('Precision')
-        ax.set_ylim(0, 1.05)
+        # Dynamic y-axis scaling based on data
+        max_val = df['precision'].max()
+        min_val = df['precision'].min()
+        margin = (max_val - min_val) * 0.1
+        ax.set_ylim(max(0, min_val - margin), min(1.05, max_val + margin))
         plt.xticks(rotation=45, ha='right')
         
         # Add mean points
@@ -551,7 +1108,11 @@ class ResultsAnalyzer:
         ax.set_title(f'Recall Distribution by Recommender (Session {session_id})')
         ax.set_xlabel('Recommender')
         ax.set_ylabel('Recall')
-        ax.set_ylim(0, 1.05)
+        # Dynamic y-axis scaling based on data
+        max_val = df['recall'].max()
+        min_val = df['recall'].min()
+        margin = (max_val - min_val) * 0.1
+        ax.set_ylim(max(0, min_val - margin), min(1.05, max_val + margin))
         plt.xticks(rotation=45, ha='right')
         
         # Add mean points
@@ -578,7 +1139,11 @@ class ResultsAnalyzer:
         ax.set_title(f'F1 Score Distribution by Recommender (Session {session_id})')
         ax.set_xlabel('Recommender')
         ax.set_ylabel('F1 Score')
-        ax.set_ylim(0, 1.05)
+        # Dynamic y-axis scaling based on data
+        max_val = df['f1_score'].max()
+        min_val = df['f1_score'].min()
+        margin = (max_val - min_val) * 0.1
+        ax.set_ylim(max(0, min_val - margin), min(1.05, max_val + margin))
         plt.xticks(rotation=45, ha='right')
         
         # Add mean points
@@ -588,6 +1153,99 @@ class ResultsAnalyzer:
         
         if len(means) > 0:
             ax.legend()
+        
+        plt.tight_layout()
+        return fig
+    
+    def _create_overlap_accuracy_comparison(self, df: pd.DataFrame, session_id: str, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
+        """Create overlap accuracy comparison box plot."""
+        if 'overlap_accuracy' not in df.columns:
+            return None
+            
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        # Box plot of overlap accuracy by recommender
+        sns.boxplot(data=df, x='recommender', y='overlap_accuracy', ax=ax)
+        
+        ax.set_title(f'Overlap Accuracy Distribution by Recommender (Session {session_id})')
+        ax.set_xlabel('Recommender')
+        ax.set_ylabel('Overlap Accuracy')
+        # Dynamic y-axis scaling based on data
+        max_val = df['overlap_accuracy'].max()
+        min_val = df['overlap_accuracy'].min()
+        margin = (max_val - min_val) * 0.1
+        ax.set_ylim(max(0, min_val - margin), min(1.05, max_val + margin))
+        plt.xticks(rotation=45, ha='right')
+        
+        # Add mean points
+        means = df.groupby('recommender')['overlap_accuracy'].mean()
+        for i, (recommender, mean_val) in enumerate(means.items()):
+            ax.plot(i, mean_val, 'ro', markersize=8, label='Mean' if i == 0 else "")
+        
+        if len(means) > 0:
+            ax.legend()
+        
+        plt.tight_layout()
+        return fig
+    
+    def _create_accuracy_by_query_number(self, df: pd.DataFrame, session_id: str, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
+        """Create accuracy by query number line plot."""
+        if 'accuracy' not in df.columns or 'query_number' not in df.columns or 'recommender' not in df.columns:
+            return None
+            
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        # Line plot of accuracy by query number for each recommender
+        recommenders = df['recommender'].unique()
+        colors = plt.cm.tab10(np.linspace(0, 1, len(recommenders)))
+        
+        for i, recommender in enumerate(recommenders):
+            rec_data = df[df['recommender'] == recommender].sort_values('query_number')
+            if not rec_data.empty:
+                ax.plot(rec_data['query_number'], rec_data['accuracy'], 
+                       label=recommender, color=colors[i], marker='o', markersize=4, linewidth=2)
+        
+        ax.set_title(f'Accuracy by Query Number (Session {session_id})')
+        ax.set_xlabel('Query Number')
+        ax.set_ylabel('Accuracy')
+        # Dynamic y-axis scaling
+        max_val = df['accuracy'].max()
+        min_val = df['accuracy'].min()
+        margin = (max_val - min_val) * 0.1
+        ax.set_ylim(max(0, min_val - margin), min(1.05, max_val + margin))
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        return fig
+    
+    def _create_overlap_accuracy_by_query_number(self, df: pd.DataFrame, session_id: str, figsize: Tuple[float, float] = (12, 8)) -> plt.Figure:
+        """Create overlap accuracy by query number line plot."""
+        if 'overlap_accuracy' not in df.columns or 'query_number' not in df.columns or 'recommender' not in df.columns:
+            return None
+            
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        # Line plot of overlap accuracy by query number for each recommender
+        recommenders = df['recommender'].unique()
+        colors = plt.cm.tab10(np.linspace(0, 1, len(recommenders)))
+        
+        for i, recommender in enumerate(recommenders):
+            rec_data = df[df['recommender'] == recommender].sort_values('query_number')
+            if not rec_data.empty:
+                ax.plot(rec_data['query_number'], rec_data['overlap_accuracy'], 
+                       label=recommender, color=colors[i], marker='o', markersize=4, linewidth=2)
+        
+        ax.set_title(f'Overlap Accuracy by Query Number (Session {session_id})')
+        ax.set_xlabel('Query Number')
+        ax.set_ylabel('Overlap Accuracy')
+        # Dynamic y-axis scaling
+        max_val = df['overlap_accuracy'].max()
+        min_val = df['overlap_accuracy'].min()
+        margin = (max_val - min_val) * 0.1
+        ax.set_ylim(max(0, min_val - margin), min(1.05, max_val + margin))
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        ax.grid(True, alpha=0.3)
         
         plt.tight_layout()
         return fig
@@ -646,7 +1304,11 @@ class ResultsAnalyzer:
         ax.set_title(f'{metric_name} vs Gap Analysis (Session {session_id})')
         ax.set_xlabel('Gap')
         ax.set_ylabel(metric_name)
-        ax.set_ylim(0, 1.05)
+        # Dynamic y-axis scaling based on data
+        max_val = valid_df[metric_col].max()
+        min_val = valid_df[metric_col].min()
+        margin = (max_val - min_val) * 0.1
+        ax.set_ylim(max(0, min_val - margin), min(1.05, max_val + margin))
         ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
         
         plt.tight_layout()
@@ -661,15 +1323,22 @@ class ResultsAnalyzer:
         
         # Distribution of result sizes
         size_counts = df['result_size_category'].value_counts()
-        ax1.pie(size_counts.values, labels=size_counts.index, autopct='%1.1f%%', startangle=90)
+        colors = plt.cm.Set3(np.linspace(0, 1, len(size_counts)))
+        wedges, texts, autotexts = ax1.pie(size_counts.values, autopct='%1.1f%%', startangle=90, colors=colors)
         ax1.set_title(f'Distribution of Result Sizes (Session {session_id})')
+        # Add legend in separate box
+        ax1.legend(wedges, size_counts.index, title="Result Size Categories", loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
         
         # Performance by result size
         sns.boxplot(data=df, x='result_size_category', y='accuracy', ax=ax2)
         ax2.set_title(f'Accuracy by Result Size (Session {session_id})')
         ax2.set_xlabel('Result Size Category')
         ax2.set_ylabel('Accuracy')
-        ax2.set_ylim(0, 1.05)
+        # Dynamic y-axis scaling
+        max_val = df['accuracy'].max()
+        min_val = df['accuracy'].min()
+        margin = (max_val - min_val) * 0.1
+        ax2.set_ylim(max(0, min_val - margin), min(1.05, max_val + margin))
         plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45, ha='right')
         
         plt.tight_layout()
@@ -702,13 +1371,20 @@ class ResultsAnalyzer:
             ax3.set_title('Accuracy vs Execution Time')
             ax3.set_xlabel('Execution Time (seconds)')
             ax3.set_ylabel('Accuracy')
-            ax3.set_ylim(0, 1.05)
+            # Dynamic y-axis scaling
+            max_val = df['accuracy'].max()
+            min_val = df['accuracy'].min()
+            margin = (max_val - min_val) * 0.1
+            ax3.set_ylim(max(0, min_val - margin), min(1.05, max_val + margin))
         
         # Time by category
         if 'execution_time_category' in df.columns:
             time_counts = df['execution_time_category'].value_counts()
-            ax4.pie(time_counts.values, labels=time_counts.index, autopct='%1.1f%%', startangle=90)
+            colors = plt.cm.Set2(np.linspace(0, 1, len(time_counts)))
+            wedges, texts, autotexts = ax4.pie(time_counts.values, autopct='%1.1f%%', startangle=90, colors=colors)
             ax4.set_title('Execution Time Categories')
+            # Add legend in separate box
+            ax4.legend(wedges, time_counts.index, title="Time Categories", loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
         
         plt.tight_layout()
         return fig
@@ -993,6 +1669,9 @@ class ResultsAnalyzer:
         # Available visualization types
         visualization_types = [
             'accuracy_comparison',
+            'overlap_accuracy_comparison',
+            'accuracy_by_query_number',
+            'overlap_accuracy_by_query_number',
             'precision_comparison', 
             'recall_comparison',
             'f1_comparison',
@@ -1027,7 +1706,7 @@ class ResultsAnalyzer:
                 'visualization_types': visualization_types,
                 'output_formats': ['PNG', 'PDF', 'CSV'],
                 'metrics_analyzed': [
-                    'accuracy', 'precision', 'recall', 'f1_score',
+                    'accuracy', 'overlap_accuracy', 'precision', 'recall', 'f1_score',
                     'jaccard_similarity', 'sensitivity', 'specificity', 'roc_auc'
                 ]
             }

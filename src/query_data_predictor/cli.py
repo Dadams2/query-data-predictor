@@ -274,6 +274,64 @@ def analyze_results(ctx, config, results_path):
 
 
 @main.command()
+@click.option('--config', '-c',
+              type=click.Path(exists=True, path_type=Path),
+              help='Path to configuration file (YAML)')
+@click.option('--results-path', '-r',
+              type=click.Path(exists=True, path_type=Path),
+              help='Path to results directory (overrides auto-detection)')
+@click.pass_context
+def analyze_simple(ctx, config, results_path):
+    """Simple analysis across three match scenarios: raw, close, similarity.
+
+    Creates per-session subdirectories `raw`, `close`, and `similarity` under the analysis
+    folder and writes plots and CSV summaries for accuracy, precision, recall and F1.
+    """
+    click.echo("Starting simple results analysis (raw / close / similarity)...")
+
+    try:
+        from query_data_predictor.analysis import ResultsAnalyzer
+
+        # Load configuration
+        if config:
+            with open(config, 'r') as f:
+                config_data = yaml.safe_load(f)
+        else:
+            config_data = {}
+
+        # Determine results path
+        if results_path:
+            target_results_dir = Path(results_path).resolve()
+            click.echo(f"Using provided results directory: {target_results_dir}")
+        else:
+            config_output_dir = config_data.get('output', {}).get('output_directory')
+            if config_output_dir:
+                base_output = Path(config_output_dir).resolve()
+            else:
+                base_output = Path.cwd().resolve() / 'results'
+
+            target_results_dir = _find_most_recent_results_dir(base_output)
+            if not target_results_dir:
+                raise click.ClickException("No results directory found. Please specify --results-path or run an experiment first.")
+            click.echo(f"Auto-detected results directory: {target_results_dir}")
+
+        analyzer = ResultsAnalyzer(results_dir=target_results_dir, config=config_data)
+        outputs = analyzer.analyze_simple()
+
+        click.echo("✓ Simple analysis completed")
+        if outputs and 'output_dirs' in outputs:
+            for scenario, path in outputs['output_dirs'].items():
+                click.echo(f"  - {scenario}: {path}")
+
+    except Exception as e:
+        click.echo(f"✗ Simple analysis failed: {e}", err=True)
+        if ctx.obj['verbose']:
+            import traceback
+            traceback.print_exc()
+        raise click.ClickException(f"Simple analysis failed: {e}")
+
+
+@main.command()
 @click.option('--config', '-c', 
               type=click.Path(exists=True, path_type=Path),
               help='Path to configuration file (YAML)')
