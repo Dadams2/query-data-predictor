@@ -2478,7 +2478,7 @@ requires-dist = [
     { name = "mlxtend", specifier = ">=0.23.4" },
     { name = "nbformat", specifier = ">=5.10.4" },
     { name = "numexpr", specifier = ">=2.10.2" },
-    { name = "numpy", specifier = ">=1.21.0" },
+    { name = "numpy", specifier = ">=2.0.0" },
     { name = "pandas", specifier = ">=2.2.3" },
     { name = "plotly", specifier = ">=6.2.0" },
     { name = "polars", specifier = ">=1.29.0" },
