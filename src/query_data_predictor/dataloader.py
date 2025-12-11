@@ -54,8 +54,16 @@ class DataLoader():
             self.get_results_for_session(session_id)
         
         data = self.memory_cache[session_id]
+        
+        # Normalize session_id to match the data type in the DataFrame
+        # Handle both string and int session_ids
+        session_id_normalized = session_id
+        if data["session_id"].dtype == object:
+            # DataFrame has string session_ids, convert to string
+            session_id_normalized = str(session_id)
+        
         query_rows = data[
-            (data["session_id"] == session_id) & 
+            (data["session_id"] == session_id_normalized) & 
             (data["query_position"] == query_id)
         ]
         if len(query_rows) == 0:
