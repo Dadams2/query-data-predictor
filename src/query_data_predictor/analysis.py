@@ -169,14 +169,34 @@ class ResultsAnalyzer:
                 pq_csv = scenario_dir / 'per_query_metrics.csv'
                 pq_df.to_csv(pq_csv, index=False)
 
+                # Determine unique recommenders
+                unique_recommenders = pq_df['recommender'].unique()
+                num_recommenders = len(unique_recommenders)
+                show_legend = num_recommenders > 1
+
                 # Plot accuracy by query number
                 try:
                     fig, ax = plt.subplots(figsize=(10, 4))
-                    ax.plot(pq_df['query_number'], pq_df['accuracy'], marker='o')
+                    
+                    if num_recommenders == 1:
+                        # Single recommender - simple line plot
+                        ax.plot(pq_df['query_number'], pq_df['accuracy'], marker='o')
+                    else:
+                        # Multiple recommenders - plot each separately
+                        colors = plt.cm.tab10(np.linspace(0, 1, num_recommenders))
+                        for idx, recommender in enumerate(unique_recommenders):
+                            rec_data = pq_df[pq_df['recommender'] == recommender]
+                            ax.plot(rec_data['query_number'], rec_data['accuracy'], 
+                                   marker='o', label=recommender, color=colors[idx])
+                    
                     ax.set_title(f'Accuracy by Query Number ({scenario}) - Session {session_id}')
                     ax.set_xlabel('Query Number')
                     ax.set_ylabel('Accuracy')
                     ax.set_ylim(0, 1.05)
+                    
+                    if show_legend:
+                        ax.legend()
+                    
                     fig_path = scenario_dir / 'accuracy_by_query_number.png'
                     fig.tight_layout()
                     fig.savefig(fig_path, dpi=150)
@@ -187,10 +207,27 @@ class ResultsAnalyzer:
                 # Plot distributions for accuracy/precision/recall/f1
                 try:
                     fig, axes = plt.subplots(2, 2, figsize=(10, 8))
-                    sns.histplot(pq_df['accuracy'], kde=True, ax=axes[0,0]).set_title('Accuracy')
-                    sns.histplot(pq_df['precision'], kde=True, ax=axes[0,1]).set_title('Precision')
-                    sns.histplot(pq_df['recall'], kde=True, ax=axes[1,0]).set_title('Recall')
-                    sns.histplot(pq_df['f1_score'], kde=True, ax=axes[1,1]).set_title('F1 Score')
+                    
+                    if num_recommenders == 1:
+                        # Single recommender - simple histograms
+                        sns.histplot(pq_df['accuracy'], kde=True, ax=axes[0,0]).set_title('Accuracy')
+                        sns.histplot(pq_df['precision'], kde=True, ax=axes[0,1]).set_title('Precision')
+                        sns.histplot(pq_df['recall'], kde=True, ax=axes[1,0]).set_title('Recall')
+                        sns.histplot(pq_df['f1_score'], kde=True, ax=axes[1,1]).set_title('F1 Score')
+                    else:
+                        # Multiple recommenders - stacked histograms with hue
+                        sns.histplot(data=pq_df, x='accuracy', hue='recommender', kde=True, ax=axes[0,0], legend=show_legend)
+                        axes[0,0].set_title('Accuracy')
+                        
+                        sns.histplot(data=pq_df, x='precision', hue='recommender', kde=True, ax=axes[0,1], legend=show_legend)
+                        axes[0,1].set_title('Precision')
+                        
+                        sns.histplot(data=pq_df, x='recall', hue='recommender', kde=True, ax=axes[1,0], legend=show_legend)
+                        axes[1,0].set_title('Recall')
+                        
+                        sns.histplot(data=pq_df, x='f1_score', hue='recommender', kde=True, ax=axes[1,1], legend=show_legend)
+                        axes[1,1].set_title('F1 Score')
+                    
                     fig.tight_layout()
                     dist_path = scenario_dir / 'metric_distributions.png'
                     fig.savefig(dist_path, dpi=150)
@@ -198,20 +235,52 @@ class ResultsAnalyzer:
                 except Exception as e:
                     logger.error(f"Failed to plot metric distributions: {e}")
 
-                # Gap-wise aggregated table and plots
+                # Gap-wise aggregated table and plots (now per recommender)
                 gap_rows = []
-                for gap_int, stats in sorted(per_gap_agg.items()):
-                    if gap_int < 0:
-                        continue
-                    gap_row = {
-                        'gap': gap_int,
-                        'accuracy_mean': np.mean(stats['accuracy']) if stats['accuracy'] else 0.0,
-                        'precision_mean': np.mean(stats['precision']) if stats['precision'] else 0.0,
-                        'recall_mean': np.mean(stats['recall']) if stats['recall'] else 0.0,
-                        'f1_mean': np.mean(stats['f1']) if stats['f1'] else 0.0,
-                        'overlap_mean': np.mean(stats['overlap']) if stats['overlap'] else 0.0,
-                    }
-                    gap_rows.append(gap_row)
+                if num_recommenders == 1:
+                    # Original behavior for single recommender
+                    for gap_int, stats in sorted(per_gap_agg.items()):
+                        if gap_int < 0:
+                            continue
+                        gap_row = {
+                            'gap': gap_int,
+                            'recommender': unique_recommenders[0],
+                            'accuracy_mean': np.mean(stats['accuracy']) if stats['accuracy'] else 0.0,
+                            'precision_mean': np.mean(stats['precision']) if stats['precision'] else 0.0,
+                            'recall_mean': np.mean(stats['recall']) if stats['recall'] else 0.0,
+                            'f1_mean': np.mean(stats['f1']) if stats['f1'] else 0.0,
+                            'overlap_mean': np.mean(stats['overlap']) if stats['overlap'] else 0.0,
+                        }
+                        gap_rows.append(gap_row)
+                else:
+                    # Aggregate per gap AND per recommender
+                    for recommender in unique_recommenders:
+                        rec_data = pq_df[pq_df['recommender'] == recommender]
+                        rec_gap_agg = {}
+                        
+                        for _, row in rec_data.iterrows():
+                            gap_val = int(row['gap']) if str(row['gap']).isdigit() else -1
+                            if gap_val < 0:
+                                continue
+                            if gap_val not in rec_gap_agg:
+                                rec_gap_agg[gap_val] = {'accuracy': [], 'precision': [], 'recall': [], 'f1': [], 'overlap': []}
+                            rec_gap_agg[gap_val]['accuracy'].append(row['accuracy'])
+                            rec_gap_agg[gap_val]['precision'].append(row['precision'])
+                            rec_gap_agg[gap_val]['recall'].append(row['recall'])
+                            rec_gap_agg[gap_val]['f1'].append(row['f1_score'])
+                            rec_gap_agg[gap_val]['overlap'].append(row['overlap'])
+                        
+                        for gap_int, stats in sorted(rec_gap_agg.items()):
+                            gap_row = {
+                                'gap': gap_int,
+                                'recommender': recommender,
+                                'accuracy_mean': np.mean(stats['accuracy']) if stats['accuracy'] else 0.0,
+                                'precision_mean': np.mean(stats['precision']) if stats['precision'] else 0.0,
+                                'recall_mean': np.mean(stats['recall']) if stats['recall'] else 0.0,
+                                'f1_mean': np.mean(stats['f1']) if stats['f1'] else 0.0,
+                                'overlap_mean': np.mean(stats['overlap']) if stats['overlap'] else 0.0,
+                            }
+                            gap_rows.append(gap_row)
 
                 gap_df = pd.DataFrame(gap_rows)
                 gap_csv = scenario_dir / 'gap_aggregates.csv'
@@ -221,15 +290,35 @@ class ResultsAnalyzer:
                 try:
                     if not gap_df.empty:
                         fig, ax = plt.subplots(figsize=(10, 5))
-                        ax.plot(gap_df['gap'], gap_df['accuracy_mean'], label='Accuracy', marker='o')
-                        ax.plot(gap_df['gap'], gap_df['precision_mean'], label='Precision', marker='o')
-                        ax.plot(gap_df['gap'], gap_df['recall_mean'], label='Recall', marker='o')
-                        ax.plot(gap_df['gap'], gap_df['f1_mean'], label='F1', marker='o')
+                        
+                        if num_recommenders == 1:
+                            # Single recommender - simple line plot
+                            ax.plot(gap_df['gap'], gap_df['accuracy_mean'], label='Accuracy', marker='o')
+                            ax.plot(gap_df['gap'], gap_df['precision_mean'], label='Precision', marker='o')
+                            ax.plot(gap_df['gap'], gap_df['recall_mean'], label='Recall', marker='o')
+                            ax.plot(gap_df['gap'], gap_df['f1_mean'], label='F1', marker='o')
+                            ax.legend()
+                        else:
+                            # Multiple recommenders - plot each recommender separately
+                            colors = plt.cm.tab10(np.linspace(0, 1, num_recommenders))
+                            markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h']
+                            
+                            # Plot accuracy for each recommender
+                            for idx, recommender in enumerate(unique_recommenders):
+                                rec_data = gap_df[gap_df['recommender'] == recommender]
+                                if not rec_data.empty:
+                                    ax.plot(rec_data['gap'], rec_data['accuracy_mean'], 
+                                           label=f'{recommender}', 
+                                           marker=markers[idx % len(markers)], 
+                                           color=colors[idx])
+                            
+                            if show_legend:
+                                ax.legend()
+                        
                         ax.set_xlabel('Gap')
                         ax.set_ylabel('Metric Mean')
-                        ax.set_title(f'Gap Metrics ({scenario}) - Session {session_id}')
+                        ax.set_title(f'Gap Metrics - Accuracy ({scenario}) - Session {session_id}')
                         ax.set_ylim(0, 1.05)
-                        ax.legend()
                         fig.tight_layout()
                         gap_plot = scenario_dir / 'gap_metrics.png'
                         fig.savefig(gap_plot, dpi=150)
@@ -241,11 +330,26 @@ class ResultsAnalyzer:
                 try:
                     if not pq_df.empty and 'overlap' in pq_df.columns:
                         fig, ax = plt.subplots(figsize=(10, 4))
-                        ax.plot(pq_df['query_number'], pq_df['overlap'], marker='o', color='purple')
+                        
+                        if num_recommenders == 1:
+                            # Single recommender - simple line plot
+                            ax.plot(pq_df['query_number'], pq_df['overlap'], marker='o', color='purple')
+                        else:
+                            # Multiple recommenders - plot each separately
+                            colors = plt.cm.tab10(np.linspace(0, 1, num_recommenders))
+                            for idx, recommender in enumerate(unique_recommenders):
+                                rec_data = pq_df[pq_df['recommender'] == recommender]
+                                ax.plot(rec_data['query_number'], rec_data['overlap'], 
+                                       marker='o', label=recommender, color=colors[idx])
+                        
                         ax.set_title(f'Overlap by Query Number ({scenario}) - Session {session_id}')
                         ax.set_xlabel('Query Number')
                         ax.set_ylabel('Overlap')
                         ax.set_ylim(0, 1.05)
+                        
+                        if show_legend:
+                            ax.legend()
+                        
                         fig_path = scenario_dir / 'overlap_by_query_number.png'
                         fig.tight_layout()
                         fig.savefig(fig_path, dpi=150)
@@ -432,7 +536,7 @@ class ResultsAnalyzer:
         Compute accuracy/precision/recall/f1 for a single prediction/actual pair under the given scenario.
         Scenarios:
           - raw: exact row equality across columns
-          - close: at least two columns match exactly for a row
+          - close: at least five columns match exactly for a row
           - similarity: jaccard similarity of row dictionaries > threshold
         """
         # Handle empty cases
@@ -464,13 +568,13 @@ class ResultsAnalyzer:
                     if a.keys() == p.keys() and all(a[k] == p[k] for k in a.keys()):
                         match = True
                 elif scenario == 'close':
-                    # exactly two column names must match AND values for those columns must match
+                    # exactly five column names must match AND values for those columns must match
                     common_keys = list(set(a.keys()).intersection(set(p.keys())))
-                    if len(common_keys) >= 2:
-                        # Find all pairs of columns where both names match
+                    if len(common_keys) >= 5:
+                        # Find all columns where both names match
                         matching_pairs = [k for k in common_keys if a.get(k) == p.get(k)]
-                        # Need at least 2 columns with matching names AND matching values
-                        if len(matching_pairs) >= 2:
+                        # Need at least 5 columns with matching names AND matching values
+                        if len(matching_pairs) >= 5:
                             match = True
                 elif scenario == 'similarity':
                     # jaccard similarity on sets of key=value strings
@@ -547,11 +651,11 @@ class ResultsAnalyzer:
                 for a_rec in actual_records:
                     match = False
                     if scenario == 'close':
-                        # exactly two column names must match AND values for those columns must match
+                        # exactly five column names must match AND values for those columns must match
                         common_keys = list(set(c_rec.keys()).intersection(set(a_rec.keys())))
-                        if len(common_keys) >= 2:
+                        if len(common_keys) >= 5:
                             matching_pairs = [k for k in common_keys if c_rec.get(k) == a_rec.get(k)]
-                            if len(matching_pairs) >= 2:
+                            if len(matching_pairs) >= 5:
                                 match = True
                     elif scenario == 'similarity':
                         # jaccard similarity
@@ -582,11 +686,11 @@ class ResultsAnalyzer:
                     if p_rec.keys() == o_rec.keys() and all(p_rec[k] == o_rec[k] for k in p_rec.keys()):
                         match = True
                 elif scenario == 'close':
-                    # exactly two column names must match AND values for those columns must match
+                    # exactly five column names must match AND values for those columns must match
                     common_keys = list(set(p_rec.keys()).intersection(set(o_rec.keys())))
-                    if len(common_keys) >= 2:
+                    if len(common_keys) >= 5:
                         matching_pairs = [k for k in common_keys if p_rec.get(k) == o_rec.get(k)]
-                        if len(matching_pairs) >= 2:
+                        if len(matching_pairs) >= 5:
                             match = True
                 elif scenario == 'similarity':
                     set_p = set(f"{k}={p_rec[k]}" for k in p_rec.keys())
@@ -909,7 +1013,6 @@ class ResultsAnalyzer:
         records: List[Dict[str, Any]] = []
         
         # Flatten all records across all gaps for this session
-        query_counter = 0  # Add query number tracking
         for gap, gap_data in session_data.items():
             if not isinstance(gap_data, list):
                 continue
@@ -965,7 +1068,7 @@ class ResultsAnalyzer:
                     'session_id': session_id,
                     'gap': str(gap),
                     'recommender': recommender,
-                    'query_number': query_counter,  # Add query number
+                    'query_number': rec.get('current_query_id', 0),  # Use actual query ID from record
                     'accuracy': accuracy,
                     'overlap_accuracy': overlap_accuracy,  # Add overlap accuracy
                     'precision': precision,
@@ -985,7 +1088,6 @@ class ResultsAnalyzer:
                 }
                 
                 records.append(record)
-                query_counter += 1  # Increment query number
         
         if not records:
             return pd.DataFrame()

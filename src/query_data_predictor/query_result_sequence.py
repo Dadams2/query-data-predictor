@@ -73,8 +73,9 @@ class QueryResultSequence:
                 fut_res, fut_text = self.dataloader.get_results_for_query_with_text(session_id, fut_id)
                 if not curr_res.empty and not fut_res.empty:
                     yield curr_id, fut_id, curr_res, fut_res, curr_text, fut_text
-            except ValueError:
+            except ValueError as e:
                 # Skip pairs where query text is not available
+                print(f"Skipping query pair {curr_id}->{fut_id} due to error: {e}")
                 continue
 
     def get_query_pair_with_gap(self, session_id: str, current_query_id: str, gap: int = 1) -> Tuple[pd.DataFrame, pd.DataFrame]:
