@@ -27,7 +27,6 @@ from query_data_predictor.recommender import (
     IncrementalRecommender,
     EmbeddingRecommender,
     ClusteringRecommender,
-    EnhancedClusteringRecommender,
     DummyRecommender,
     RandomRecommender
 )
