@@ -20,3 +20,4 @@ debug*
 results/*
 *.md
 !README.md
+simba
