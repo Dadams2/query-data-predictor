@@ -11,15 +11,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Hardcoded database configuration for SIMBA
-DB_NAME = "simba_benchmark"
+DB_NAME = "simba_sdss"
 DB_USER = os.getenv("PG_DATA_USER", "postgres")  # fallback to 'postgres' if not set
 DB_HOST = os.getenv("PG_HOST", "localhost")
 DB_PORT = os.getenv("PG_PORT", "5432")
 
 # Paths for SIMBA data
-SAMPLE_CSV_PATH = Path(__file__).parent.parent / "data" / "simba_test" / "CircActivity_battleheer_session0_simple.csv"
-OUTPUT_DIR = Path(__file__).parent.parent / "data" / "datasets" / "simba_complex"
-QUERY_RESULTS_DIR = Path(__file__).parent.parent / "data" / "datasets" / "simba_complex" / "query_results"
+SAMPLE_CSV_PATH = Path(__file__).parent.parent / "data" / "datasets" / "simba_SDSS" / "SDSS_pattern_drilldown_session2.csv"
+OUTPUT_DIR = Path(__file__).parent.parent / "data" / "datasets" / "simba_SDSS"
+QUERY_RESULTS_DIR = Path(__file__).parent.parent / "data" / "datasets" / "simba_SDSS" / "query_results"
 
 
 # SAMPLE_CSV_PATH = Path(__file__).parent.parent / "data" / "simba_test" / "CircActivity_testing_session1_simple.csv"
