@@ -201,15 +201,15 @@ def test_compute_metrics_raw_scenario(temp_results_dir, sample_config):
         config=sample_config
     )
     
-    # Test exact match
-    predicted = pd.DataFrame([
+    # Test exact match (pass lists of dicts directly)
+    predicted = [
         {"col1": "A", "col2": "X", "col3": 1},
         {"col1": "B", "col2": "Y", "col3": 2}
-    ])
-    actual = pd.DataFrame([
+    ]
+    actual = [
         {"col1": "A", "col2": "X", "col3": 1},
         {"col1": "C", "col2": "Z", "col3": 3}
-    ])
+    ]
     
     metrics = analyzer._compute_metrics_for_scenario(predicted, actual, 'raw', 0.5)
     
@@ -221,25 +221,25 @@ def test_compute_metrics_raw_scenario(temp_results_dir, sample_config):
 
 
 def test_compute_metrics_close_scenario(temp_results_dir, sample_config):
-    """Test close scenario metric computation."""
+    """Test close scenario metric computation with enough columns for close matching."""
     analyzer = ResultsAnalyzer(
         results_dir=temp_results_dir,
         config=sample_config
     )
     
-    # Test with at least 2 column names matching AND values matching
-    predicted = pd.DataFrame([
-        {"col1": "A", "col2": "X", "col3": 999},  # col1 and col2 names+values match
-        {"col1": "D", "col2": "W", "col3": 4}
-    ])
-    actual = pd.DataFrame([
-        {"col1": "A", "col2": "X", "col3": 1},
-        {"col1": "C", "col2": "Z", "col3": 3}
-    ])
+    # Test with at least 5 matching columns (close requires >= 5)
+    predicted = [
+        {"c1": "A", "c2": "X", "c3": 1, "c4": "m", "c5": "n", "c6": 999},
+        {"c1": "D", "c2": "W", "c3": 4, "c4": "q", "c5": "r", "c6": 0}
+    ]
+    actual = [
+        {"c1": "A", "c2": "X", "c3": 1, "c4": "m", "c5": "n", "c6": 1},
+        {"c1": "C", "c2": "Z", "c3": 3, "c4": "p", "c5": "s", "c6": 2}
+    ]
     
     metrics = analyzer._compute_metrics_for_scenario(predicted, actual, 'close', 0.5)
     
-    # Should find 1 match (col1=A and col2=X both name and value match)
+    # First predicted matches first actual on 5 of 6 columns (c1-c5)
     assert metrics['accuracy'] == 0.5  # 1/2 actual matched
     assert metrics['precision'] == 0.5  # 1/2 predicted matched
 
@@ -251,18 +251,18 @@ def test_compute_overlap(temp_results_dir, sample_config):
         config=sample_config
     )
     
-    current = pd.DataFrame([
+    current = [
         {"col1": "A", "col2": "X", "col3": 1},
         {"col1": "B", "col2": "Y", "col3": 2}
-    ])
-    actual = pd.DataFrame([
+    ]
+    actual = [
         {"col1": "A", "col2": "X", "col3": 1},  # In overlap
         {"col1": "C", "col2": "Z", "col3": 3}   # Not in overlap
-    ])
-    predicted = pd.DataFrame([
+    ]
+    predicted = [
         {"col1": "A", "col2": "X", "col3": 1},  # Matches overlap
         {"col1": "B", "col2": "Y", "col3": 2}   # Not in overlap
-    ])
+    ]
     
     overlap = analyzer._compute_overlap_for_scenario(current, actual, predicted, 'raw', 0.5)
     

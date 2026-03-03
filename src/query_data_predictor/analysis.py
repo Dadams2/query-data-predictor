@@ -2,6 +2,7 @@
 Analysis module for query prediction experiment results.
 """
 
+import gc
 import json
 import logging
 from pathlib import Path
@@ -108,31 +109,23 @@ class ResultsAnalyzer:
                 logger.warning(f"No records for session {session_id}")
                 continue
 
-            # For each scenario create outputs
-            for scenario in scenarios:
-                scenario_dir = session_base / scenario
-                scenario_dir.mkdir(parents=True, exist_ok=True)
+            # Process all records once for all scenarios to minimize memory.
+            # This avoids re-reading heavy result data 3x (once per scenario)
+            # and allows freeing each record's data after computing all metrics.
+            scenario_metrics = {s: {'per_query_rows': [], 'per_gap_agg': {}} for s in scenarios}
 
-                # Accumulators for per-query metrics and per-gap metrics
-                per_query_rows = []
-                per_gap_agg = {}
+            for query_idx, (gap, rec) in enumerate(flat_records):
+                recommender = rec.get('recommender_name', 'unknown')
+                current = rec.get('current_results') or []
+                future = rec.get('future_results') or []
+                predicted = rec.get('recommended_results') or []
 
-                query_idx = 0
-                for gap, rec in flat_records:
-                    recommender = rec.get('recommender_name', 'unknown')
-                    current = rec.get('current_results') or []
-                    future = rec.get('future_results') or []
-                    predicted = rec.get('recommended_results') or []
+                for scenario in scenarios:
+                    # Compute metrics (accepts lists directly, no DataFrame conversion)
+                    metrics = self._compute_metrics_for_scenario(predicted, future, scenario, base_jaccard)
 
-                    current_df = pd.DataFrame(current) if isinstance(current, list) else pd.DataFrame()
-                    future_df = pd.DataFrame(future) if isinstance(future, list) else pd.DataFrame()
-                    pred_df = pd.DataFrame(predicted) if isinstance(predicted, list) else pd.DataFrame()
-
-                    # Compute metrics according to scenario
-                    metrics = self._compute_metrics_for_scenario(pred_df, future_df, scenario, base_jaccard)
-                    
                     # Compute overlap metric
-                    overlap = self._compute_overlap_for_scenario(current_df, future_df, pred_df, scenario, base_jaccard)
+                    overlap = self._compute_overlap_for_scenario(current, future, predicted, scenario, base_jaccard)
 
                     row = {
                         'session_id': session_id,
@@ -145,19 +138,39 @@ class ResultsAnalyzer:
                         'f1_score': metrics['f1'],
                         'overlap': overlap
                     }
-                    per_query_rows.append(row)
+                    scenario_metrics[scenario]['per_query_rows'].append(row)
 
                     # Aggregate per gap
                     gap_int = int(gap) if str(gap).isdigit() else -1
-                    if gap_int not in per_gap_agg:
-                        per_gap_agg[gap_int] = {'accuracy': [], 'precision': [], 'recall': [], 'f1': [], 'overlap': []}
-                    per_gap_agg[gap_int]['accuracy'].append(metrics['accuracy'])
-                    per_gap_agg[gap_int]['precision'].append(metrics['precision'])
-                    per_gap_agg[gap_int]['recall'].append(metrics['recall'])
-                    per_gap_agg[gap_int]['f1'].append(metrics['f1'])
-                    per_gap_agg[gap_int]['overlap'].append(overlap)
+                    agg = scenario_metrics[scenario]['per_gap_agg']
+                    if gap_int not in agg:
+                        agg[gap_int] = {'accuracy': [], 'precision': [], 'recall': [], 'f1': [], 'overlap': []}
+                    agg[gap_int]['accuracy'].append(metrics['accuracy'])
+                    agg[gap_int]['precision'].append(metrics['precision'])
+                    agg[gap_int]['recall'].append(metrics['recall'])
+                    agg[gap_int]['f1'].append(metrics['f1'])
+                    agg[gap_int]['overlap'].append(overlap)
 
-                    query_idx += 1
+                # Free heavy data from this record to reduce peak memory usage
+                rec['current_results'] = None
+                rec['future_results'] = None
+                rec['recommended_results'] = None
+
+                if query_idx > 0 and query_idx % 50 == 0:
+                    gc.collect()
+                    logger.debug(f"Processed {query_idx}/{len(flat_records)} records")
+
+            # Force garbage collection after processing all records
+            gc.collect()
+            logger.info(f"Completed metric computation for session {session_id}")
+
+            # For each scenario, generate outputs (plots and CSVs)
+            for scenario in scenarios:
+                scenario_dir = session_base / scenario
+                scenario_dir.mkdir(parents=True, exist_ok=True)
+
+                per_query_rows = scenario_metrics[scenario]['per_query_rows']
+                per_gap_agg = scenario_metrics[scenario]['per_gap_agg']
 
                 # Create DataFrame from per-query rows
                 pq_df = pd.DataFrame(per_query_rows)
@@ -531,91 +544,91 @@ class ResultsAnalyzer:
         
         logger.info("Cross-session summaries complete")
 
-    def _compute_metrics_for_scenario(self, predicted: pd.DataFrame, actual: pd.DataFrame, scenario: str, base_jaccard: float) -> Dict[str, float]:
+    def _records_match(self, rec_a: dict, rec_b: dict, scenario: str, base_jaccard: float) -> bool:
+        """
+        Check if two record dicts match under the given scenario.
+        
+        Args:
+            rec_a: First record dict
+            rec_b: Second record dict
+            scenario: 'raw', 'close', or 'similarity'
+            base_jaccard: Jaccard threshold for similarity scenario
+        """
+        if scenario == 'raw':
+            return rec_a.keys() == rec_b.keys() and all(rec_a[k] == rec_b[k] for k in rec_a.keys())
+        elif scenario == 'close':
+            common_keys = set(rec_a.keys()) & set(rec_b.keys())
+            if len(common_keys) < 5:
+                return False
+            matching = sum(1 for k in common_keys if rec_a.get(k) == rec_b.get(k))
+            return matching >= 5
+        elif scenario == 'similarity':
+            set_a = set(f"{k}={rec_a[k]}" for k in rec_a.keys())
+            set_b = set(f"{k}={rec_b[k]}" for k in rec_b.keys())
+            inter = len(set_a & set_b)
+            union = len(set_a | set_b)
+            return (inter / union if union > 0 else 0.0) >= base_jaccard
+        return False
+
+    def _compute_metrics_for_scenario(self, predicted: list, actual: list, scenario: str, base_jaccard: float) -> Dict[str, float]:
         """
         Compute accuracy/precision/recall/f1 for a single prediction/actual pair under the given scenario.
-        Scenarios:
-          - raw: exact row equality across columns
-          - close: at least five columns match exactly for a row
-          - similarity: jaccard similarity of row dictionaries > threshold
+        
+        Args:
+            predicted: List of dicts (predicted result rows)
+            actual: List of dicts (actual/future result rows)
+            scenario: 'raw', 'close', or 'similarity'
+            base_jaccard: Jaccard threshold for similarity scenario
         """
         # Handle empty cases
-        if actual.empty and predicted.empty:
+        if not actual and not predicted:
             return {'accuracy': 1.0, 'precision': 1.0, 'recall': 1.0, 'f1': 1.0}
-        if actual.empty and not predicted.empty:
+        if not actual:
             return {'accuracy': 0.0, 'precision': 0.0, 'recall': 0.0, 'f1': 0.0}
-        if predicted.empty and not actual.empty:
+        if not predicted:
             return {'accuracy': 0.0, 'precision': 0.0, 'recall': 0.0, 'f1': 0.0}
-
-        # Convert to record lists
-        actual_records = actual.to_dict('records')
-        pred_records = predicted.to_dict('records')
 
         true_positives = 0
         matched_pred_indices = set()
 
-        # Define similarity threshold for scenario 'similarity'
-        sim_threshold = base_jaccard if scenario == 'similarity' else 0.0
-
-        for i, a in enumerate(actual_records):
-            for j, p in enumerate(pred_records):
+        for i, a in enumerate(actual):
+            for j, p in enumerate(predicted):
                 if j in matched_pred_indices:
                     continue
 
-                match = False
-                if scenario == 'raw':
-                    # exact equality: keys must match and values equal
-                    if a.keys() == p.keys() and all(a[k] == p[k] for k in a.keys()):
-                        match = True
-                elif scenario == 'close':
-                    # exactly five column names must match AND values for those columns must match
-                    common_keys = list(set(a.keys()).intersection(set(p.keys())))
-                    if len(common_keys) >= 5:
-                        # Find all columns where both names match
-                        matching_pairs = [k for k in common_keys if a.get(k) == p.get(k)]
-                        # Need at least 5 columns with matching names AND matching values
-                        if len(matching_pairs) >= 5:
-                            match = True
-                elif scenario == 'similarity':
-                    # jaccard similarity on sets of key=value strings
-                    set_a = set(f"{k}={a[k]}" for k in a.keys())
-                    set_p = set(f"{k}={p[k]}" for k in p.keys())
-                    inter = len(set_a.intersection(set_p))
-                    union = len(set_a.union(set_p))
-                    jacc = inter / union if union > 0 else 0.0
-                    if jacc >= sim_threshold:
-                        match = True
-
-                if match:
+                if self._records_match(a, p, scenario, base_jaccard):
                     true_positives += 1
                     matched_pred_indices.add(j)
                     break
 
-        precision = true_positives / len(pred_records) if pred_records else 0.0
-        recall = true_positives / len(actual_records) if actual_records else 0.0
+        precision = true_positives / len(predicted) if predicted else 0.0
+        recall = true_positives / len(actual) if actual else 0.0
         f1 = 0.0
         if precision + recall > 0:
             f1 = 2 * precision * recall / (precision + recall)
 
         # accuracy defined as proportion of actual tuples matched
-        accuracy = true_positives / len(actual_records) if actual_records else 0.0
+        accuracy = true_positives / len(actual) if actual else 0.0
 
         return {'accuracy': accuracy, 'precision': precision, 'recall': recall, 'f1': f1}
 
-    def _compute_overlap_for_scenario(self, current: pd.DataFrame, actual: pd.DataFrame, 
-                                      predicted: pd.DataFrame, scenario: str, base_jaccard: float) -> float:
+    def _compute_overlap_for_scenario(self, current: list, actual: list, 
+                                      predicted: list, scenario: str, base_jaccard: float) -> float:
         """
-        Compute overlap metric: proportion of predicted tuples that appear in the
-        inner join of current and actual results.
+        Compute overlap metric: proportion of predicted tuples that appear in both
+        current and actual results (the overlap region).
         
-        Steps:
-        1. Inner join current and actual (the overlap)
-        2. Check what proportion of predicted tuples are in this overlap
+        Optimized approach: Instead of computing the full inner join of
+        current x actual — O(|current| * |actual|) which can be 10^10 — we check
+        each predicted tuple (typically ~10) against both current and actual
+        separately. This is O(|predicted| * (|current| + |actual|)).
+        
+        For exact matching (raw), hash sets give O(1) per lookup.
         
         Args:
-            current: Current query results
-            actual: Future/actual query results
-            predicted: Predicted results
+            current: List of dicts (current query result rows)
+            actual: List of dicts (future/actual query result rows)
+            predicted: List of dicts (predicted result rows)
             scenario: Matching scenario ('raw', 'close', 'similarity')
             base_jaccard: Jaccard threshold for similarity scenario
         
@@ -623,91 +636,42 @@ class ResultsAnalyzer:
             Overlap score between 0 and 1
         """
         # Handle empty cases
-        if current.empty or actual.empty:
+        if not current or not actual:
             return 0.0
-        if predicted.empty:
+        if not predicted:
             return 0.0
         
-        # Step 1: Compute overlap between current and actual
-        # For "raw" scenario, do exact merge
         if scenario == 'raw':
-            # Try to merge on all common columns
-            common_cols = list(set(current.columns).intersection(set(actual.columns)))
-            if not common_cols:
-                overlap_records = []
-            else:
-                try:
-                    overlap_df = pd.merge(current, actual, on=common_cols, how='inner')
-                    overlap_records = overlap_df.to_dict('records')
-                except Exception:
-                    overlap_records = []
-        else:
-            # For "close" and "similarity", manually find overlapping tuples
-            current_records = current.to_dict('records')
-            actual_records = actual.to_dict('records')
-            overlap_records = []
+            # Build hash sets for O(1) membership testing
+            def _row_key(rec):
+                return frozenset((str(k), str(v)) for k, v in rec.items())
             
-            for c_rec in current_records:
-                for a_rec in actual_records:
-                    match = False
-                    if scenario == 'close':
-                        # exactly five column names must match AND values for those columns must match
-                        common_keys = list(set(c_rec.keys()).intersection(set(a_rec.keys())))
-                        if len(common_keys) >= 5:
-                            matching_pairs = [k for k in common_keys if c_rec.get(k) == a_rec.get(k)]
-                            if len(matching_pairs) >= 5:
-                                match = True
-                    elif scenario == 'similarity':
-                        # jaccard similarity
-                        set_c = set(f"{k}={c_rec[k]}" for k in c_rec.keys())
-                        set_a = set(f"{k}={a_rec[k]}" for k in a_rec.keys())
-                        inter = len(set_c.intersection(set_a))
-                        union = len(set_c.union(set_a))
-                        jacc = inter / union if union > 0 else 0.0
-                        if jacc >= base_jaccard:
-                            match = True
-                    
-                    if match:
-                        # Add the merged/combined record to overlap
-                        overlap_records.append(a_rec)  # Use actual record as the reference
-                        break
-        
-        if not overlap_records:
-            return 0.0
-        
-        # Step 2: Check what proportion of predicted tuples are in the overlap
-        pred_records = predicted.to_dict('records')
-        matched_count = 0
-        
-        for p_rec in pred_records:
-            for o_rec in overlap_records:
-                match = False
-                if scenario == 'raw':
-                    if p_rec.keys() == o_rec.keys() and all(p_rec[k] == o_rec[k] for k in p_rec.keys()):
-                        match = True
-                elif scenario == 'close':
-                    # exactly five column names must match AND values for those columns must match
-                    common_keys = list(set(p_rec.keys()).intersection(set(o_rec.keys())))
-                    if len(common_keys) >= 5:
-                        matching_pairs = [k for k in common_keys if p_rec.get(k) == o_rec.get(k)]
-                        if len(matching_pairs) >= 5:
-                            match = True
-                elif scenario == 'similarity':
-                    set_p = set(f"{k}={p_rec[k]}" for k in p_rec.keys())
-                    set_o = set(f"{k}={o_rec[k]}" for k in o_rec.keys())
-                    inter = len(set_p.intersection(set_o))
-                    union = len(set_p.union(set_o))
-                    jacc = inter / union if union > 0 else 0.0
-                    if jacc >= base_jaccard:
-                        match = True
-                
-                if match:
+            current_set = set(_row_key(r) for r in current)
+            actual_set = set(_row_key(r) for r in actual)
+            
+            matched_count = 0
+            for p in predicted:
+                p_key = _row_key(p)
+                if p_key in current_set and p_key in actual_set:
                     matched_count += 1
-                    break
+        else:
+            # For close/similarity: check each predicted against current AND actual.
+            # O(|predicted| * (|current| + |actual|)) instead of O(|current| * |actual|)
+            matched_count = 0
+            for p_rec in predicted:
+                in_current = any(
+                    self._records_match(p_rec, c_rec, scenario, base_jaccard)
+                    for c_rec in current
+                )
+                if in_current:
+                    in_actual = any(
+                        self._records_match(p_rec, a_rec, scenario, base_jaccard)
+                        for a_rec in actual
+                    )
+                    if in_actual:
+                        matched_count += 1
         
-        # Return proportion of predicted that are in overlap
-        overlap_score = matched_count / len(pred_records) if pred_records else 0.0
-        return overlap_score
+        return matched_count / len(predicted) if predicted else 0.0
     
     def _load_results(self):
         """Load all JSON result files from the results directory."""
