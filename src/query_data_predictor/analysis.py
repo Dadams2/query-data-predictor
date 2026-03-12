@@ -120,6 +120,11 @@ class ResultsAnalyzer:
                 future = rec.get('future_results') or []
                 predicted = rec.get('recommended_results') or []
 
+                # Use actual query position in the session so the x-axis of
+                # accuracy_by_query_number reflects true temporal order and
+                # can be averaged across gaps meaningfully.
+                actual_query_id = rec.get('current_query_id', query_idx)
+
                 for scenario in scenarios:
                     # Compute metrics (accepts lists directly, no DataFrame conversion)
                     metrics = self._compute_metrics_for_scenario(predicted, future, scenario, base_jaccard)
@@ -130,7 +135,7 @@ class ResultsAnalyzer:
                     row = {
                         'session_id': session_id,
                         'gap': gap,
-                        'query_number': query_idx,
+                        'query_number': actual_query_id,
                         'recommender': recommender,
                         'accuracy': metrics['accuracy'],
                         'precision': metrics['precision'],
@@ -190,16 +195,24 @@ class ResultsAnalyzer:
                 # Plot accuracy by query number
                 try:
                     fig, ax = plt.subplots(figsize=(10, 4))
-                    
+
+                    # Average accuracy across gaps at each (recommender, query_number)
+                    # so the curve shows per-query-position performance rather than
+                    # one raw point per (gap, query, recommender) combination.
+                    pq_avg = (pq_df
+                              .groupby(['recommender', 'query_number'], sort=True)['accuracy']
+                              .mean()
+                              .reset_index())
+
                     if num_recommenders == 1:
                         # Single recommender - simple line plot
-                        ax.plot(pq_df['query_number'], pq_df['accuracy'], marker='o')
+                        ax.plot(pq_avg['query_number'], pq_avg['accuracy'], marker='o')
                     else:
                         # Multiple recommenders - plot each separately
                         colors = plt.cm.tab10(np.linspace(0, 1, num_recommenders))
                         for idx, recommender in enumerate(unique_recommenders):
-                            rec_data = pq_df[pq_df['recommender'] == recommender]
-                            ax.plot(rec_data['query_number'], rec_data['accuracy'], 
+                            rec_data = pq_avg[pq_avg['recommender'] == recommender].sort_values('query_number')
+                            ax.plot(rec_data['query_number'], rec_data['accuracy'],
                                    marker='o', label=recommender, color=colors[idx])
                     
                     ax.set_title(f'Accuracy by Query Number ({scenario}) - Session {session_id}')
@@ -343,16 +356,22 @@ class ResultsAnalyzer:
                 try:
                     if not pq_df.empty and 'overlap' in pq_df.columns:
                         fig, ax = plt.subplots(figsize=(10, 4))
-                        
+
+                        # Average overlap across gaps, same as accuracy plot
+                        ov_avg = (pq_df
+                                  .groupby(['recommender', 'query_number'], sort=True)['overlap']
+                                  .mean()
+                                  .reset_index())
+
                         if num_recommenders == 1:
                             # Single recommender - simple line plot
-                            ax.plot(pq_df['query_number'], pq_df['overlap'], marker='o', color='purple')
+                            ax.plot(ov_avg['query_number'], ov_avg['overlap'], marker='o', color='purple')
                         else:
                             # Multiple recommenders - plot each separately
                             colors = plt.cm.tab10(np.linspace(0, 1, num_recommenders))
                             for idx, recommender in enumerate(unique_recommenders):
-                                rec_data = pq_df[pq_df['recommender'] == recommender]
-                                ax.plot(rec_data['query_number'], rec_data['overlap'], 
+                                rec_data = ov_avg[ov_avg['recommender'] == recommender].sort_values('query_number')
+                                ax.plot(rec_data['query_number'], rec_data['overlap'],
                                        marker='o', label=recommender, color=colors[idx])
                         
                         ax.set_title(f'Overlap by Query Number ({scenario}) - Session {session_id}')
