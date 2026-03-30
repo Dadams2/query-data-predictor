@@ -1,0 +1,124 @@
+Session ID: benchmark_s2
+Source: query_prediction_session_benchmark_s2.pkl
+Queries: 30
+Note: current_query in this dataset stores only region/category predicates by design.
+
+[0] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' /* session=benchmark_s2 pos=0 */
+[0] RESULTS_FILE: query_results/results_session_benchmark_s2_query_0.pkl
+[0] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' AND supplier_type = 'DOMESTIC' AND price_range = 'LOW' AND quantity_bin = 'MEDIUM' AND priority = 'LOW' AND ship_mode = 'TRUCK' AND year = '2023' AND quarter = 'Q3'
+
+[1] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' /* session=benchmark_s2 pos=1 */
+[1] RESULTS_FILE: query_results/results_session_benchmark_s2_query_1.pkl
+[1] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' AND supplier_type = 'DOMESTIC' AND price_range = 'PREMIUM' AND quantity_bin = 'SMALL' AND priority = 'LOW' AND ship_mode = 'TRUCK' AND year = '2023' AND quarter = 'Q3'
+
+[2] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'HEALTHCARE' /* session=benchmark_s2 pos=2 */
+[2] RESULTS_FILE: query_results/results_session_benchmark_s2_query_2.pkl
+[2] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'HEALTHCARE' AND supplier_type = 'DOMESTIC' AND price_range = 'PREMIUM' AND quantity_bin = 'LARGE' AND priority = 'LOW' AND ship_mode = 'AIR' AND year = '2023' AND quarter = 'Q3'
+
+[3] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'AUTOMOTIVE' /* session=benchmark_s2 pos=3 */
+[3] RESULTS_FILE: query_results/results_session_benchmark_s2_query_3.pkl
+[3] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'AUTOMOTIVE' AND supplier_type = 'DOMESTIC' AND price_range = 'PREMIUM' AND quantity_bin = 'SMALL' AND priority = 'STANDARD' AND ship_mode = 'TRUCK' AND year = '2024' AND quarter = 'Q2'
+
+[4] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'RETAIL' /* session=benchmark_s2 pos=4 */
+[4] RESULTS_FILE: query_results/results_session_benchmark_s2_query_4.pkl
+[4] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'RETAIL' AND supplier_type = 'BUDGET' AND price_range = 'PREMIUM' AND quantity_bin = 'LARGE' AND priority = 'URGENT' AND ship_mode = 'AIR' AND year = '2023' AND quarter = 'Q2'
+
+[5] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'HEALTHCARE' /* session=benchmark_s2 pos=5 */
+[5] RESULTS_FILE: query_results/results_session_benchmark_s2_query_5.pkl
+[5] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'HEALTHCARE' AND supplier_type = 'DOMESTIC' AND price_range = 'PREMIUM' AND quantity_bin = 'LARGE' AND priority = 'URGENT' AND ship_mode = 'AIR' AND year = '2023' AND quarter = 'Q3'
+
+[6] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' /* session=benchmark_s2 pos=6 */
+[6] RESULTS_FILE: query_results/results_session_benchmark_s2_query_6.pkl
+[6] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' AND supplier_type = 'BUDGET' AND price_range = 'PREMIUM' AND quantity_bin = 'MEDIUM' AND priority = 'STANDARD' AND ship_mode = 'RAIL' AND year = '2023' AND quarter = 'Q2'
+
+[7] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'AUTOMOTIVE' /* session=benchmark_s2 pos=7 */
+[7] RESULTS_FILE: query_results/results_session_benchmark_s2_query_7.pkl
+[7] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'AUTOMOTIVE' AND supplier_type = 'BUDGET' AND price_range = 'LOW' AND quantity_bin = 'SMALL' AND priority = 'LOW' AND ship_mode = 'RAIL' AND year = '2023' AND quarter = 'Q3'
+
+[8] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'RETAIL' /* session=benchmark_s2 pos=8 */
+[8] RESULTS_FILE: query_results/results_session_benchmark_s2_query_8.pkl
+[8] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'RETAIL' AND supplier_type = 'DOMESTIC' AND price_range = 'PREMIUM' AND quantity_bin = 'LARGE' AND priority = 'STANDARD' AND ship_mode = 'AIR' AND year = '2023' AND quarter = 'Q2'
+
+[9] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'RETAIL' /* session=benchmark_s2 pos=9 */
+[9] RESULTS_FILE: query_results/results_session_benchmark_s2_query_9.pkl
+[9] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'RETAIL' AND supplier_type = 'DOMESTIC' AND price_range = 'PREMIUM' AND quantity_bin = 'LARGE' AND priority = 'LOW' AND ship_mode = 'AIR' AND year = '2022' AND quarter = 'Q1'
+
+[10] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' /* session=benchmark_s2 pos=10 */
+[10] RESULTS_FILE: query_results/results_session_benchmark_s2_query_10.pkl
+[10] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' AND supplier_type = 'DOMESTIC' AND price_range = 'PREMIUM' AND quantity_bin = 'MEDIUM' AND priority = 'STANDARD' AND ship_mode = 'RAIL' AND year = '2023' AND quarter = 'Q2'
+
+[11] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'HEALTHCARE' /* session=benchmark_s2 pos=11 */
+[11] RESULTS_FILE: query_results/results_session_benchmark_s2_query_11.pkl
+[11] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'HEALTHCARE' AND supplier_type = 'DOMESTIC' AND price_range = 'PREMIUM' AND quantity_bin = 'LARGE' AND priority = 'LOW' AND ship_mode = 'AIR' AND year = '2024' AND quarter = 'Q2'
+
+[12] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'AUTOMOTIVE' /* session=benchmark_s2 pos=12 */
+[12] RESULTS_FILE: query_results/results_session_benchmark_s2_query_12.pkl
+[12] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'AUTOMOTIVE' AND supplier_type = 'BUDGET' AND price_range = 'PREMIUM' AND quantity_bin = 'SMALL' AND priority = 'STANDARD' AND ship_mode = 'RAIL' AND year = '2023' AND quarter = 'Q2'
+
+[13] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' /* session=benchmark_s2 pos=13 */
+[13] RESULTS_FILE: query_results/results_session_benchmark_s2_query_13.pkl
+[13] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' AND supplier_type = 'DOMESTIC' AND price_range = 'PREMIUM' AND quantity_bin = 'SMALL' AND priority = 'LOW' AND ship_mode = 'RAIL' AND year = '2023' AND quarter = 'Q2'
+
+[14] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'HEALTHCARE' /* session=benchmark_s2 pos=14 */
+[14] RESULTS_FILE: query_results/results_session_benchmark_s2_query_14.pkl
+[14] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'HEALTHCARE' AND supplier_type = 'DOMESTIC' AND price_range = 'PREMIUM' AND quantity_bin = 'LARGE' AND priority = 'URGENT' AND ship_mode = 'AIR' AND year = '2023' AND quarter = 'Q2'
+
+[15] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' /* session=benchmark_s2 pos=15 */
+[15] RESULTS_FILE: query_results/results_session_benchmark_s2_query_15.pkl
+[15] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' AND supplier_type = 'DOMESTIC' AND price_range = 'PREMIUM' AND quantity_bin = 'MEDIUM' AND priority = 'LOW' AND ship_mode = 'RAIL' AND year = '2023' AND quarter = 'Q2'
+
+[16] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' /* session=benchmark_s2 pos=16 */
+[16] RESULTS_FILE: query_results/results_session_benchmark_s2_query_16.pkl
+[16] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' AND supplier_type = 'BUDGET' AND price_range = 'PREMIUM' AND quantity_bin = 'MEDIUM' AND priority = 'LOW' AND ship_mode = 'RAIL' AND year = '2023' AND quarter = 'Q2'
+
+[17] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'RETAIL' /* session=benchmark_s2 pos=17 */
+[17] RESULTS_FILE: query_results/results_session_benchmark_s2_query_17.pkl
+[17] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'RETAIL' AND supplier_type = 'INTERNATIONAL' AND price_range = 'PREMIUM' AND quantity_bin = 'LARGE' AND priority = 'STANDARD' AND ship_mode = 'AIR' AND year = '2023' AND quarter = 'Q2'
+
+[18] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' /* session=benchmark_s2 pos=18 */
+[18] RESULTS_FILE: query_results/results_session_benchmark_s2_query_18.pkl
+[18] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' AND supplier_type = 'DOMESTIC' AND price_range = 'LOW' AND quantity_bin = 'MEDIUM' AND priority = 'LOW' AND ship_mode = 'RAIL' AND year = '2024' AND quarter = 'Q3'
+
+[19] STORED_QUERY: SELECT * FROM orders WHERE region = 'MIDDLE_EAST' AND category = 'RETAIL' /* session=benchmark_s2 pos=19 */
+[19] RESULTS_FILE: query_results/results_session_benchmark_s2_query_19.pkl
+[19] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'MIDDLE_EAST' AND category = 'RETAIL' AND supplier_type = 'BUDGET' AND price_range = 'PREMIUM' AND quantity_bin = 'LARGE' AND priority = 'STANDARD' AND ship_mode = 'AIR' AND year = '2023' AND quarter = 'Q2'
+
+[20] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'HEALTHCARE' /* session=benchmark_s2 pos=20 */
+[20] RESULTS_FILE: query_results/results_session_benchmark_s2_query_20.pkl
+[20] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'HEALTHCARE' AND supplier_type = 'BUDGET' AND price_range = 'PREMIUM' AND quantity_bin = 'LARGE' AND priority = 'LOW' AND ship_mode = 'AIR' AND year = '2023' AND quarter = 'Q2'
+
+[21] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' /* session=benchmark_s2 pos=21 */
+[21] RESULTS_FILE: query_results/results_session_benchmark_s2_query_21.pkl
+[21] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' AND supplier_type = 'BUDGET' AND price_range = 'PREMIUM' AND quantity_bin = 'MEDIUM' AND priority = 'STANDARD' AND ship_mode = 'RAIL' AND year = '2023' AND quarter = 'Q2'
+
+[22] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'AUTOMOTIVE' /* session=benchmark_s2 pos=22 */
+[22] RESULTS_FILE: query_results/results_session_benchmark_s2_query_22.pkl
+[22] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'AUTOMOTIVE' AND supplier_type = 'DOMESTIC' AND price_range = 'PREMIUM' AND quantity_bin = 'SMALL' AND priority = 'LOW' AND ship_mode = 'AIR' AND year = '2023' AND quarter = 'Q3'
+
+[23] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'HEALTHCARE' /* session=benchmark_s2 pos=23 */
+[23] RESULTS_FILE: query_results/results_session_benchmark_s2_query_23.pkl
+[23] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'HEALTHCARE' AND supplier_type = 'INTERNATIONAL' AND price_range = 'PREMIUM' AND quantity_bin = 'LARGE' AND priority = 'LOW' AND ship_mode = 'AIR' AND year = '2023' AND quarter = 'Q3'
+
+[24] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'HEALTHCARE' /* session=benchmark_s2 pos=24 */
+[24] RESULTS_FILE: query_results/results_session_benchmark_s2_query_24.pkl
+[24] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'HEALTHCARE' AND supplier_type = 'DOMESTIC' AND price_range = 'PREMIUM' AND quantity_bin = 'LARGE' AND priority = 'STANDARD' AND ship_mode = 'AIR' AND year = '2024' AND quarter = 'Q3'
+
+[25] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'AUTOMOTIVE' /* session=benchmark_s2 pos=25 */
+[25] RESULTS_FILE: query_results/results_session_benchmark_s2_query_25.pkl
+[25] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'AUTOMOTIVE' AND supplier_type = 'BUDGET' AND price_range = 'PREMIUM' AND quantity_bin = 'SMALL' AND priority = 'LOW' AND ship_mode = 'TRUCK' AND year = '2023' AND quarter = 'Q2'
+
+[26] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'RETAIL' /* session=benchmark_s2 pos=26 */
+[26] RESULTS_FILE: query_results/results_session_benchmark_s2_query_26.pkl
+[26] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'RETAIL' AND supplier_type = 'BUDGET' AND price_range = 'PREMIUM' AND quantity_bin = 'LARGE' AND priority = 'URGENT' AND ship_mode = 'AIR' AND year = '2023' AND quarter = 'Q2'
+
+[27] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' /* session=benchmark_s2 pos=27 */
+[27] RESULTS_FILE: query_results/results_session_benchmark_s2_query_27.pkl
+[27] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' AND supplier_type = 'BUDGET' AND price_range = 'LOW' AND quantity_bin = 'SMALL' AND priority = 'STANDARD' AND ship_mode = 'TRUCK' AND year = '2023' AND quarter = 'Q3'
+
+[28] STORED_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' /* session=benchmark_s2 pos=28 */
+[28] RESULTS_FILE: query_results/results_session_benchmark_s2_query_28.pkl
+[28] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'EUROPE' AND category = 'FINANCE' AND supplier_type = 'DOMESTIC' AND price_range = 'MEDIUM' AND quantity_bin = 'SMALL' AND priority = 'STANDARD' AND ship_mode = 'RAIL' AND year = '2023' AND quarter = 'Q2'
+
+[29] STORED_QUERY: SELECT * FROM orders WHERE region = 'MIDDLE_EAST' AND category = 'RETAIL' /* session=benchmark_s2 pos=29 */
+[29] RESULTS_FILE: query_results/results_session_benchmark_s2_query_29.pkl
+[29] INFERRED_FULL_QUERY: SELECT * FROM orders WHERE region = 'MIDDLE_EAST' AND category = 'RETAIL' AND supplier_type = 'DOMESTIC' AND price_range = 'PREMIUM' AND quantity_bin = 'LARGE' AND priority = 'URGENT' AND ship_mode = 'AIR' AND year = '2023' AND quarter = 'Q2'
