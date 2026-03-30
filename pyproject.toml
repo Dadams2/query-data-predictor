@@ -1,7 +1,7 @@
 [project]
 name = "query-data-predictor"
 version = "0.1.0"
-description = "Add your description here"
+description = "Query-sequence recommendation experiments for implicit exploratory data analysis"
 readme = "README.md"
 authors = [
     { name = "David Adams", email = "david@dadams2.com" }
