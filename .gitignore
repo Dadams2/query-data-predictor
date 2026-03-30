@@ -13,16 +13,11 @@ wheels/
 .cache/
 .matplotlib/
 .coverage
-data/
 data-full/
 *.ipynb
 *.log
-*.pkl
 *.html
 debug*
 results/*
-*.md
-!README.md
 simba
-figures/
 presentation*
