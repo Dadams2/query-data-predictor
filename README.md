@@ -22,6 +22,12 @@ timestamped outputs under `results/`.
 
 ## Quick Start
 
+
+```bash
+git clone git@github.com:Dadams2/query-data-predictor.git
+git checkout VLDB_2026
+```
+
 The repository is set up to use `uv`. All submission-facing scripts keep caches
 inside the repository so they also work in restricted environments.
 
