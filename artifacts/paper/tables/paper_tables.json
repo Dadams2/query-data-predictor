@@ -1,0 +1,179 @@
+[
+  {
+    "table_key": "simba_results",
+    "label": "Table 1: Recommendation performance at gap = 1 on SIMBA drill-down sessions",
+    "gap": 1,
+    "experiment_label": "SIMBA drill-down benchmark",
+    "analysis_csv": "previous-results/paper/simba-drilldown/analysis/summary/raw/all_sessions_metrics.csv",
+    "results_dir": "previous-results/paper/simba-drilldown",
+    "config": "experiments/configs/simba_drilldown.yml",
+    "rows": [
+      {
+        "recommender": "multidimensional_interestingness",
+        "display_name": "MDI (Ours)",
+        "precision": 0.292,
+        "recall": 0.283,
+        "f1_score": 0.287,
+        "overlap": 0.292
+      },
+      {
+        "recommender": "similarity",
+        "display_name": "Similarity",
+        "precision": 0.34,
+        "recall": 0.33,
+        "f1_score": 0.335,
+        "overlap": 0.34
+      },
+      {
+        "recommender": "frequency",
+        "display_name": "Frequency",
+        "precision": 0.308,
+        "recall": 0.299,
+        "f1_score": 0.303,
+        "overlap": 0.308
+      },
+      {
+        "recommender": "random",
+        "display_name": "Random",
+        "precision": 0.302,
+        "recall": 0.292,
+        "f1_score": 0.297,
+        "overlap": 0.302
+      },
+      {
+        "recommender": "clustering",
+        "display_name": "Clustering",
+        "precision": 0.292,
+        "recall": 0.283,
+        "f1_score": 0.287,
+        "overlap": 0.0
+      },
+      {
+        "recommender": "sampling",
+        "display_name": "Sampling",
+        "precision": 0.271,
+        "recall": 0.261,
+        "f1_score": 0.266,
+        "overlap": 0.271
+      }
+    ]
+  },
+  {
+    "table_key": "adversarial_results",
+    "label": "Table 2: Recommendation performance at gap = 1 on the adversarial benchmark",
+    "gap": 1,
+    "experiment_label": "Controlled adversarial benchmark",
+    "analysis_csv": "previous-results/paper/adversarial-benchmark/analysis/summary/raw/all_sessions_metrics.csv",
+    "results_dir": "previous-results/paper/adversarial-benchmark",
+    "config": "experiments/configs/benchmark_mdi_vs_baselines.yml",
+    "rows": [
+      {
+        "recommender": "multidimensional_interestingness",
+        "display_name": "MDI (Ours)",
+        "precision": 0.292,
+        "recall": 0.249,
+        "f1_score": 0.26,
+        "overlap": 0.295
+      },
+      {
+        "recommender": "clustering",
+        "display_name": "Clustering",
+        "precision": 0.248,
+        "recall": 0.183,
+        "f1_score": 0.199,
+        "overlap": 0.248
+      },
+      {
+        "recommender": "random",
+        "display_name": "Random",
+        "precision": 0.239,
+        "recall": 0.176,
+        "f1_score": 0.191,
+        "overlap": 0.243
+      },
+      {
+        "recommender": "sampling",
+        "display_name": "Sampling",
+        "precision": 0.239,
+        "recall": 0.176,
+        "f1_score": 0.191,
+        "overlap": 0.243
+      },
+      {
+        "recommender": "similarity",
+        "display_name": "Similarity",
+        "precision": 0.208,
+        "recall": 0.145,
+        "f1_score": 0.16,
+        "overlap": 0.212
+      },
+      {
+        "recommender": "frequency",
+        "display_name": "Frequency",
+        "precision": 0.198,
+        "recall": 0.135,
+        "f1_score": 0.15,
+        "overlap": 0.202
+      }
+    ]
+  },
+  {
+    "table_key": "sdss_results",
+    "label": "Table 3: Recommendation performance at gap = 1 on sampled SkyServer SQL sessions",
+    "gap": 1,
+    "experiment_label": "Sampled SkyServer SQL benchmark",
+    "analysis_csv": "previous-results/paper/sdss-logs/analysis/summary/raw/all_sessions_metrics.csv",
+    "results_dir": "previous-results/paper/sdss-logs",
+    "config": "experiments/configs/sdss_vs_baselines.yml",
+    "rows": [
+      {
+        "recommender": "clustering",
+        "display_name": "Clustering",
+        "precision": 0.037,
+        "recall": 0.033,
+        "f1_score": 0.033,
+        "overlap": 0.037
+      },
+      {
+        "recommender": "frequency",
+        "display_name": "Frequency",
+        "precision": 0.037,
+        "recall": 0.033,
+        "f1_score": 0.033,
+        "overlap": 0.037
+      },
+      {
+        "recommender": "random",
+        "display_name": "Random",
+        "precision": 0.037,
+        "recall": 0.033,
+        "f1_score": 0.033,
+        "overlap": 0.037
+      },
+      {
+        "recommender": "sampling",
+        "display_name": "Sampling",
+        "precision": 0.037,
+        "recall": 0.033,
+        "f1_score": 0.033,
+        "overlap": 0.037
+      },
+      {
+        "recommender": "similarity",
+        "display_name": "Similarity",
+        "precision": 0.019,
+        "recall": 0.018,
+        "f1_score": 0.018,
+        "overlap": 0.019
+      },
+      {
+        "recommender": "multidimensional_interestingness",
+        "display_name": "MDI (Ours)",
+        "precision": 0.014,
+        "recall": 0.012,
+        "f1_score": 0.013,
+        "overlap": 0.014
+      }
+    ]
+  }
+]
