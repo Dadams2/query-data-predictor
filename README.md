@@ -1,60 +1,74 @@
 # Query Data Predictor
 
 This repository contains the code, datasets, experiment configurations, and
-artifact-generation workflow for the vision paper:
+artifact-generation workflow for the results reproduced here.
 
-`Beyond Active Learning: Implicit Recommendation and Diagnostic Benchmarks for Exploratory Data Analysis [Vision]`
+## Main Outputs
 
-The submission artifact is organized around the final outputs that need to be
-reproduced from this repository:
+The main outputs are:
 
-- Table 1: SIMBA drill-down results
-- Table 2: adversarial benchmark results
-- Table 3: sampled SkyServer SQL-log results
-- Figure 1: workload comparison
+- `workload_comparison.pdf`
+- `paper_table_rows.tex`
 
-The remaining figures produced by the repo are treated as supplementary:
-`gap_analysis.pdf`, `overlap_analysis.pdf`, and `decay_sensitivity.pdf`.
+Supplementary outputs are:
 
-The frozen paper snapshots used for default verification live under
-`previous-results/` with standard names, while fresh reruns continue to write
-timestamped outputs under `results/`.
+- `gap_analysis.pdf`
+- `overlap_analysis.pdf`
+- `decay_sensitivity.pdf`
 
-## Quick Start
+All generated table files are written to `artifacts/paper/tables/`.
+All generated figure files are written to `artifacts/paper/figures/`.
 
+## Setup
+
+This repository uses `uv`. The helper scripts also reuse `.venv/` if it
+already exists.
+
+If you do not have `uv` installed, you can install it with:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+You can either choose to use your own shell environment or use the provided helper scripts. The helper scripts set up a consistent environment and also verify that the artifact workflow is working correctly.:
 
 ```bash
 git clone git@github.com:Dadams2/query-data-predictor.git
-git checkout VLDB_2026
-```
-
-The repository is set up to use `uv`. All submission-facing scripts keep caches
-inside the repository so they also work in restricted environments.
-
-```bash
+cd query-data-predictor
 bash scripts/verify_artifact.sh
 ```
 
-That command will:
-
-- install/sync dependencies with `uv`
-- run a small smoke suite for the artifact workflow
-- recompute the paper tables from the included result snapshots
-- regenerate the paper figures
-
-## Reproduction Modes
-
-### 1. Verify from included results
-
-This is the recommended review path. It uses the bundled result snapshots
-listed in [paper_artifact_manifest.yaml](/Users/DAADAMS/Other/query-data-predictor/paper_artifact_manifest.yaml).
+To set up the environment manually, you can run:
 
 ```bash
-bash scripts/reproduce_tables.sh
-bash scripts/reproduce_figures.sh
+uv sync --no-dev
+``` 
+
+Activate the virtual environment with `source .venv/bin/activate`.
+You should be able to run:
+
+```bash
+query-data-predictor --help
+```
+to see the available commands.
+
+
+## Reproducing Experimental Results
+
+The main reproduction path is to rerun the experiments from scratch and then
+regenerate the tables and figures from those fresh results:
+
+```bash
+bash scripts/rerun_paper_experiments.sh
 ```
 
-Outputs:
+This script runs:
+
+- `experiments/configs/simba_drilldown.yml`
+- `experiments/configs/benchmark_mdi_vs_baselines.yml`
+- `experiments/configs/sdss_vs_baselines.yml`
+
+and then rebuilds:
 
 - `artifacts/paper/tables/paper_tables.md`
 - `artifacts/paper/tables/paper_table_rows.tex`
@@ -68,71 +82,98 @@ Outputs:
 - `artifacts/paper/figures/overlap_analysis.pdf`
 - `artifacts/paper/figures/decay_sensitivity.pdf`
 
-### 2. Rerun the paper experiments
+This takes many hours. The SDSS and adversarial reruns are not quick, and the
+decay sweep is separate and even more long-running.
 
-If you want to regenerate the underlying result directories rather than verify
-against the included snapshots:
+## Compare Against Existing Snapshot Data
+
+If you only want to compare your environment against some exmaple frozen snapshot data,
+use:
 
 ```bash
-bash scripts/rerun_paper_experiments.sh
+bash scripts/reproduce_tables.sh
+bash scripts/reproduce_figures.sh
 ```
 
-This runs and analyzes the three paper benchmarks using:
+This mode uses the standardized snapshots stored under:
 
-- [experiments/configs/simba_drilldown.yml](/Users/DAADAMS/Other/query-data-predictor/experiments/configs/simba_drilldown.yml)
-- [experiments/configs/benchmark_mdi_vs_baselines.yml](/Users/DAADAMS/Other/query-data-predictor/experiments/configs/benchmark_mdi_vs_baselines.yml)
-- [experiments/configs/sdss_vs_baselines.yml](/Users/DAADAMS/Other/query-data-predictor/experiments/configs/sdss_vs_baselines.yml)
+- `previous-results/paper/`
+- `previous-results/decay-sweep/`
 
-After rerunning, the figure/table scripts will prefer the manifest's frozen
-paper snapshots when present. The rerun script explicitly switches the table and
-figure generators to `--use-latest-results`, so the full reproduction pipeline
-still uses the fresh timestamped outputs in `results/`. Those latest reruns are
-not required to numerically match the frozen paper snapshot exactly, so this
-mode regenerates outputs without checking them against the paper expectations.
+## Generating Your Own Adversarial Benchmark
 
-## Paper Output Map
+To create a fresh adversarial benchmark dataset instead of using the bundled
+one:
 
-The canonical mapping from experiments to paper outputs lives in
-[paper_artifact_manifest.yaml](/Users/DAADAMS/Other/query-data-predictor/paper_artifact_manifest.yaml).
+```bash
+source scripts/paper_env.sh
+paper_sync
+paper_python tools/generate_benchmark.py \
+  --output data/datasets/benchmark_custom \
+  --config-output experiments/configs/benchmark_custom.yml \
+  --num-sessions 3 \
+  --queries-per-session 30 \
+  --total-rows 5000 \
+  --seed 42
+```
 
-In short:
+This will:
 
-- `simba_drilldown` feeds the SIMBA table
-- `adversarial_benchmark` feeds the adversarial table and gap analysis
-- `sdss_logs` feeds the SkyServer table
-- [generate_publication_figures.py](/Users/DAADAMS/Other/query-data-predictor/generate_publication_figures.py) builds the final figure files under `artifacts/paper/figures/`
-- [extract_table_data.py](/Users/DAADAMS/Other/query-data-predictor/extract_table_data.py) extracts the exact paper table values
-- `previous-results/paper/` stores the frozen benchmark snapshots with stable names
-- `previous-results/decay-sweep/` stores the frozen decay-sweep snapshots with stable names
-- If `vision-paper/figures/` exists locally, the figure generator also mirrors the figure assets there for LaTeX compilation
+- create a new synthetic dataset in `data/datasets/benchmark_custom/`
+- write a matching experiment config to `experiments/configs/benchmark_custom.yml`
 
-## Data Included in the Repository
+Then run the experiment and analysis:
 
-The paper currently uses three data sources already materialized in the repo:
+```bash
+source scripts/paper_env.sh
+paper_qdp run-experiment -c experiments/configs/benchmark_custom.yml
+paper_qdp analyze-simple -c experiments/configs/benchmark_custom.yml
+```
 
-- `data/datasets/simba_drilldown/`
-- `data/datasets/benchmark_mdi/`
-- `data/datasets/` for the sampled SkyServer SQL sessions
+If you want to avoid mixing outputs with the default benchmark runs, edit the
+generated config first and change:
 
-The SDSS corpus metadata currently includes 463 sessions in
-`data/datasets/metadata.csv`. The paper benchmark uses a fixed 10-session subset
-specified in the SDSS config above.
+- `output.output_directory`
+- `experiment.name`
 
-## Notes for Reviewers
+You can also do a quick self-check of the generator itself:
 
-- The main artifact path is `verify from included results`, not `rerun everything`.
-- `uv` is the supported package manager for this repo.
-- The scripts set local cache directories for `uv`, Matplotlib, and fontconfig.
-- If `.venv/` already exists, the scripts reuse it instead of forcing a new `uv sync`.
-- This repository does not need the LaTeX paper source to reproduce the final
-  tables and figure files.
+```bash
+source scripts/paper_env.sh
+paper_sync
+paper_python tools/generate_benchmark.py --verify --seed 42
+```
 
-## Related Files
+## Other Long-Running Experiments
 
-- [paper_artifact_manifest.yaml](/Users/DAADAMS/Other/query-data-predictor/paper_artifact_manifest.yaml)
-- [generate_publication_figures.py](/Users/DAADAMS/Other/query-data-predictor/generate_publication_figures.py)
-- [extract_table_data.py](/Users/DAADAMS/Other/query-data-predictor/extract_table_data.py)
-- [scripts/reproduce_tables.sh](/Users/DAADAMS/Other/query-data-predictor/scripts/reproduce_tables.sh)
-- [scripts/reproduce_figures.sh](/Users/DAADAMS/Other/query-data-predictor/scripts/reproduce_figures.sh)
-- [scripts/rerun_paper_experiments.sh](/Users/DAADAMS/Other/query-data-predictor/scripts/rerun_paper_experiments.sh)
-- [scripts/verify_artifact.sh](/Users/DAADAMS/Other/query-data-predictor/scripts/verify_artifact.sh)
+The temporal decay sweep is available separately:
+
+```bash
+bash run_decay_sweep.sh
+```
+
+That sweep is also multi-hour and regenerates the supplementary
+`decay_sensitivity.pdf` figure.
+
+## Data Used
+
+The repository includes these benchmark datasets:
+
+- `data/datasets/simba_drilldown/` generated with SIMBA
+- `data/datasets/benchmark_mdi/` generated with the MDI generator
+- `data/datasets/` generated from skyserver SQL sessions
+
+The SDSS corpus metadata includes 463 sessions in `data/datasets/metadata.csv`.
+The reproduced SDSS benchmark uses the fixed session subset listed in
+`experiments/configs/sdss_vs_baselines.yml`.
+
+
+## Useful Files
+
+- `generate_publication_figures.py`
+- `extract_table_data.py`
+- `tools/generate_benchmark.py`
+- `scripts/reproduce_tables.sh`
+- `scripts/reproduce_figures.sh`
+- `scripts/rerun_paper_experiments.sh`
+- `scripts/verify_artifact.sh`
