@@ -1,0 +1,111 @@
+# SDSS Dataset: MDI vs All Baselines
+#
+# Full and fair comparison on the original SDSS dataset.
+# Uses 10 sessions (20-155 queries each) sampled from the 463 available.
+# Matches the recommender set and evaluation setup from simba_drilldown
+# and benchmark_mdi_vs_baselines for a consistent comparison.
+
+output:
+  save_predictions: true
+  save_metrics: false
+  save_summaries: false
+  output_directory: 'results/sdss_vs_baselines'
+
+experiment:
+  name: "sdss_vs_baselines"
+  recommenders:
+    - multidimensional_interestingness
+    - random
+    - clustering
+    - frequency
+    - similarity
+    - sampling
+  mode: "cheating"
+  include_query_text: false
+  data_path: 'data/datasets'
+  store_intermediate_states: false
+  sessions:
+    - 12050
+    - 11047
+    - 12006
+    - 11356
+    - 11088
+    - 11064
+    - 11072
+    - 11045
+    - 11266
+    - 11070
+    # others
+    # - 12235
+    # - 11066
+    # - 12155
+    # - 11070
+    # - 11058
+    # - 11074
+    # - 11028
+    # - 11035
+    # - 11094
+    # - 11029
+    # - 11031
+    # extras 
+    # - 11036
+    # - 11140
+    # - 11309
+    # - 11022
+    # - 11142
+    # - 11019
+    # - 11146
+    # - 11126
+    # - 11095
+    # - 11047
+    # - 12238
+  prediction_gap: [1, 2]
+
+multidimensional_interestingness:
+  alpha: 0.5
+  beta: 0.3
+  gamma: 0.2
+  association_weights:
+    confidence: 0.3
+    support: 0.2
+    lift: 0.3
+    j_measure: 0.2
+  diversity_weights:
+    shannon: 0.25
+    simpson: 0.20
+    gini: 0.20
+    berger: 0.15
+    mcintosh: 0.20
+  rule_decay_rate: 0.05
+  summary_decay_rate: 0.1
+
+association_rules:
+  enabled: true
+  min_support: 0.08
+  min_threshold: 0.1
+  metric: 'confidence'
+  max_rules: 500
+
+summaries:
+  enabled: true
+  desired_size: 10
+
+discretization:
+  enabled: false
+  method: 'equal_width'
+  bins: 5
+  save_params: false
+  params_path: 'discretization_params.pkl'
+
+recommendation:
+  mode: 'top_k'
+  top_k: 25
+  score_threshold: 0.0
+
+evaluation:
+  metrics:
+    - 'precision'
+    - 'recall'
+    - 'f1'
+    - 'overlap'
+  window_sizes: [5, 10, 20]

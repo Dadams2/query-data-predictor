@@ -1,0 +1,96 @@
+# Kernel Density Recommender Experiment Configuration
+#
+# Runs the kernel density recommender alongside baselines using SIMBA SDSS data.
+# The kernel density approach models SQL queries as geometric regions and uses
+# KDE over the region sequence to recommend tuples from anywhere in the database.
+
+output:
+  save_predictions: true
+  save_metrics: false
+  save_summaries: false
+  output_directory: 'results/kernel_density'
+
+experiment:
+  name: "kernel_density"
+  recommenders:
+    - kernel_density
+    - random
+    - random_table_baseline
+    - multidimensional_interestingness
+    - clustering
+    - sampling
+  mode: "normal"
+  include_query_text: true  # Required for SQL parsing in kernel_density
+  data_path: 'data/datasets/simba_SDSS'
+  store_intermediate_states: false
+  sessions: [2]
+  prediction_gap: [1, 2, 3, 5]
+
+# Kernel density recommender configuration
+kernel_density:
+  kernel_type: 'gaussian'         # 'indicator', 'gaussian', 'region_adapted'
+  bandwidth_scale: 1.0
+  temporal_decay: 0.1
+  normalize_attributes: true
+  candidate_sampling:
+    max_queries: 5
+    max_candidates: 1000
+    max_time: 30.0
+    expansion_factor: 0.3
+    near_boundary_ratio: 0.8
+    random_sample_limit: 200
+
+# Multi-dimensional interestingness configuration (baseline)
+multidimensional_interestingness:
+  alpha: 0.4
+  beta: 0.4
+  gamma: 0.2
+  association_weights:
+    confidence: 0.3
+    support: 0.2
+    lift: 0.3
+    j_measure: 0.2
+  diversity_weights:
+    shannon: 0.25
+    simpson: 0.20
+    gini: 0.20
+    berger: 0.15
+    mcintosh: 0.20
+  rule_decay_rate: 0.1
+  summary_decay_rate: 0.1
+
+# Association rules configuration
+association_rules:
+  enabled: true
+  min_support: 0.1
+  min_threshold: 0.5
+  metric: 'confidence'
+  max_rules: 500
+
+# Summaries configuration
+summaries:
+  enabled: true
+  desired_size: 10
+
+# Discretization configuration
+discretization:
+  enabled: true
+  method: 'equal_width'
+  bins: 5
+  save_params: true
+  params_path: 'discretization_params.pkl'
+
+# Recommendation output configuration
+recommendation:
+  mode: 'top_k'
+  top_k: 10
+  score_threshold: 0.0
+
+# Evaluation configuration
+evaluation:
+  metrics:
+    - 'precision'
+    - 'recall'
+    - 'f1'
+    - 'overlap'
+  window_sizes: [5, 10, 20]

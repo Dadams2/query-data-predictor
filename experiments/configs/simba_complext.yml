@@ -1,0 +1,91 @@
+# Multi-Dimensional Interestingness Recommender Configuration
+# 
+# This configuration implements the interestingness contribution scheme with:
+# - Temporal decay weights for adaptive behavior
+# - Multi-measure association rule scoring
+# - Multi-measure diversity scoring  
+# - Novelty detection
+
+output:
+  # Directory where results will be saved
+  # Save predictions, metrics, and summaries
+  save_predictions: true
+  save_metrics: false
+  save_summaries: false
+  output_directory: 'results/simba'
+
+experiment:
+  name: "simba_complex"
+  recommenders:
+    - multidimensional_interestingness
+    - random 
+    - clustering
+    - sampling
+  mode: "normal"  # or "cheating" to match future result size
+  include_query_text: false
+  data_path: 'data/datasets/simba_complex'
+  store_intermediate_states: false
+  sessions: [session0]
+  prediction_gap: [1,2,3,5,6]
+
+# Multi-dimensional interestingness configuration
+multidimensional_interestingness:
+  # Main component weights (α, β, γ) - should sum to ~1.0
+  alpha: 0.4    # Association rules weight
+  beta: 0.4     # Summaries/diversity weight  
+  gamma: 0.2    # Novelty weight
+  
+  # Association rule measure weights (λ_1, λ_2, λ_3, λ_4) - should sum to ~1.0
+  association_weights:
+    confidence: 0.3   # λ_1: Confidence weight
+    support: 0.2      # λ_2: Support weight
+    lift: 0.3         # λ_3: Lift weight
+    j_measure: 0.2    # λ_4: J-measure (approximated via leverage)
+  
+  # Diversity measure weights (μ_1, μ_2, μ_3, μ_4, μ_5) - should sum to ~1.0
+  diversity_weights:
+    shannon: 0.25     # μ_1: Shannon entropy
+    simpson: 0.20     # μ_2: 1 - Simpson index
+    gini: 0.20        # μ_3: Gini index
+    berger: 0.15      # μ_4: 1 - Berger-Parker index
+    mcintosh: 0.20    # μ_5: McIntosh diversity
+  
+  # Temporal decay parameters
+  rule_decay_rate: 0.1      # λ_r: Decay rate for association rules (higher = faster decay)
+  summary_decay_rate: 0.1   # λ_s: Decay rate for summaries (higher = faster decay)
+
+# Association rules configuration
+association_rules:
+  enabled: true
+  min_support: 0.1       # Minimum support for frequent itemsets
+  min_threshold: 0.5     # Minimum confidence for rules
+  metric: 'confidence'   # Metric for rule mining
+  max_rules: 500         # Maximum number of rules to consider
+
+# Summaries configuration
+summaries:
+  enabled: true
+  desired_size: 10       # Number of summaries to generate
+
+# Discretization configuration
+discretization:
+  enabled: true
+  method: 'equal_width'  # 'equal_width', 'equal_frequency', or 'kmeans'
+  bins: 5
+  save_params: true
+  params_path: 'discretization_params.pkl'
+
+# Recommendation output configuration
+recommendation:
+  mode: 'top_k'         # 'top_k', 'top_quartile', or 'percentage'
+  top_k: 10             # Number of tuples to recommend (if mode is 'top_k')
+  score_threshold: 0.0  # Minimum score threshold (0 = no threshold)
+
+# Evaluation configuration
+evaluation:
+  metrics:
+    - 'precision'
+    - 'recall'
+    - 'f1'
+    - 'overlap'
+  window_sizes: [5, 10, 20]
