@@ -420,3 +420,102 @@ Returns:
         
         # Calculate similarity
         return matches / total_weight if total_weight > 0 else 0.0
+
+    # --- Discovery metrics for out-of-results recommenders ---
+
+    def discovery_precision(self, recommended: pd.DataFrame, future_accessed: pd.DataFrame) -> float:
+        """Precision of recommended tuples w.r.t. tuples actually accessed in the future.
+
+        Args:
+            recommended: DataFrame of recommended tuples
+            future_accessed: DataFrame of tuples the analyst accessed later
+
+        Returns:
+            Fraction of recommended tuples that appear in future_accessed
+        """
+        if recommended.empty:
+            return 1.0 if future_accessed.empty else 0.0
+        if future_accessed.empty:
+            return 0.0
+
+        rec_set = self._dataframe_to_tuple_set(recommended)
+        future_set = self._dataframe_to_tuple_set(future_accessed)
+        hits = rec_set.intersection(future_set)
+        return len(hits) / len(rec_set)
+
+    def discovery_recall(self, recommended: pd.DataFrame, future_accessed: pd.DataFrame) -> float:
+        """Recall of recommended tuples w.r.t. tuples actually accessed in the future.
+
+        Args:
+            recommended: DataFrame of recommended tuples
+            future_accessed: DataFrame of tuples the analyst accessed later
+
+        Returns:
+            Fraction of future_accessed tuples that were recommended
+        """
+        if future_accessed.empty:
+            return 1.0 if recommended.empty else 0.0
+        if recommended.empty:
+            return 0.0
+
+        rec_set = self._dataframe_to_tuple_set(recommended)
+        future_set = self._dataframe_to_tuple_set(future_accessed)
+        hits = rec_set.intersection(future_set)
+        return len(hits) / len(future_set)
+
+    def discovery_f1(self, recommended: pd.DataFrame, future_accessed: pd.DataFrame) -> float:
+        """F1 score combining discovery precision and recall.
+
+        Args:
+            recommended: DataFrame of recommended tuples
+            future_accessed: DataFrame of tuples the analyst accessed later
+
+        Returns:
+            Harmonic mean of discovery_precision and discovery_recall
+        """
+        p = self.discovery_precision(recommended, future_accessed)
+        r = self.discovery_recall(recommended, future_accessed)
+        if p + r == 0:
+            return 0.0
+        return 2 * p * r / (p + r)
+
+    @staticmethod
+    def geometric_iou(predicted_region: Dict[str, Tuple[float, float]],
+                      actual_region: Dict[str, Tuple[float, float]]) -> float:
+        """Axis-aligned bounding-box IoU between two regions.
+
+        Both regions are dictionaries mapping attribute names to (lo, hi) tuples.
+        IoU is computed over the intersection of their attribute sets.
+
+        Args:
+            predicted_region: {attr: (lo, hi)} for predicted region
+            actual_region: {attr: (lo, hi)} for actual region
+
+        Returns:
+            IoU score in [0, 1]; 0 if no shared attributes or no overlap
+        """
+        common_attrs = set(predicted_region.keys()) & set(actual_region.keys())
+        if not common_attrs:
+            return 0.0
+
+        intersection_vol = 1.0
+        pred_vol = 1.0
+        actual_vol = 1.0
+
+        for attr in common_attrs:
+            p_lo, p_hi = predicted_region[attr]
+            a_lo, a_hi = actual_region[attr]
+
+            inter_lo = max(p_lo, a_lo)
+            inter_hi = min(p_hi, a_hi)
+            inter_len = max(0.0, inter_hi - inter_lo)
+
+            intersection_vol *= inter_len
+            pred_vol *= max(0.0, p_hi - p_lo)
+            actual_vol *= max(0.0, a_hi - a_lo)
+
+        union_vol = pred_vol + actual_vol - intersection_vol
+        if union_vol <= 0:
+            return 0.0
+
+        return intersection_vol / union_vol

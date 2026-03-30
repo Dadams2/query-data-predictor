@@ -17,10 +17,13 @@ from .embedding_recommender import EmbeddingRecommender
 from .query_expansion_recommender import QueryExpansionRecommender
 from .random_table_recommender import RandomTableRecommender
 from .multidimensional_interestingness_recommender import MultiDimensionalInterestingnessRecommender
+from .kernel_density_recommender import KernelDensityRecommender
+from .region_extractor import RegionExtractor, QueryRegion, AttributeBound
+from .interest_density import InterestDensity, KernelConfig
 
 __all__ = [
     'BaseRecommender',
-    'DummyRecommender', 
+    'DummyRecommender',
     'ClusteringRecommender',
     'RandomRecommender',
     'InterestingnessRecommender',
@@ -33,5 +36,11 @@ __all__ = [
     'EmbeddingRecommender',
     'QueryExpansionRecommender',
     'RandomTableRecommender',
-    'MultiDimensionalInterestingnessRecommender'
+    'MultiDimensionalInterestingnessRecommender',
+    'KernelDensityRecommender',
+    'RegionExtractor',
+    'QueryRegion',
+    'AttributeBound',
+    'InterestDensity',
+    'KernelConfig',
 ]

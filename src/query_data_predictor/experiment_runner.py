@@ -31,7 +31,8 @@ from query_data_predictor.recommender import (
     SimilarityRecommender,
     FrequencyRecommender,
     SamplingRecommender,
-    MultiDimensionalInterestingnessRecommender
+    MultiDimensionalInterestingnessRecommender,
+    KernelDensityRecommender,
 )
 from query_data_predictor.query_runner import QueryRunner
 
@@ -210,6 +211,7 @@ class ExperimentRunner:
             'query_expansion': QueryExpansionRecommender,
             'random_table_baseline': RandomTableRecommender,
             'multidimensional_interestingness': MultiDimensionalInterestingnessRecommender,
+            'kernel_density': KernelDensityRecommender,
         }
         
         # Get the list of recommenders from config
@@ -223,7 +225,7 @@ class ExperimentRunner:
                     recommender_class = available_recommenders[name]
                     
                     # Handle recommenders that need special initialization (QueryRunner)
-                    if name in ['query_expansion', 'random_table_baseline']:
+                    if name in ['query_expansion', 'random_table_baseline', 'kernel_density']:
                         query_runner = self._get_query_runner()
                         initialized_recommenders[name] = recommender_class(self.config, query_runner=query_runner)
                         logger.warning(f"Skipping {name} - QueryRunner implementation needed")
