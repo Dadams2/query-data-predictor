@@ -27,7 +27,7 @@ experiment:
   sessions:
     - 12050
     - 11047
-    - 12006
+    - 12006 # can become too large for github
     - 11356
     - 11088
     - 11064
@@ -35,6 +35,7 @@ experiment:
     - 11045
     - 11266
     - 11070
+    # - 12235
     # others
     # - 12235
     # - 11066
