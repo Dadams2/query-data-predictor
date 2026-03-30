@@ -1,0 +1,2 @@
+scenario,total_queries,total_sessions,accuracy_mean,accuracy_std,accuracy_median,precision_mean,precision_std,precision_median,recall_mean,recall_std,recall_median,f1_mean,f1_std,f1_median,overlap_mean,overlap_std,overlap_median
+similarity,16140,8,0.03348805244813379,0.15485627733021815,0.0,0.04171317454922712,0.18016494358184912,0.0,0.03348805244813379,0.15485627733021815,0.0,0.03520221076972004,0.1599338884170059,0.0,0.04171317454922712,0.18016494358184912,0.0

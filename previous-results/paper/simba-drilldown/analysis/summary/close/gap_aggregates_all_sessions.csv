@@ -1,0 +1,6 @@
+gap,accuracy_mean,accuracy_std,accuracy_count,precision_mean,precision_std,recall_mean,recall_std,f1_score_mean,f1_score_std
+1,0.0,0.0,84,0.0,0.0,0.0,0.0,0.0,0.0
+2,0.0,0.0,78,0.0,0.0,0.0,0.0,0.0,0.0
+3,0.0,0.0,72,0.0,0.0,0.0,0.0,0.0,0.0
+5,0.0,0.0,60,0.0,0.0,0.0,0.0,0.0,0.0
+10,0.0,0.0,30,0.0,0.0,0.0,0.0,0.0,0.0
