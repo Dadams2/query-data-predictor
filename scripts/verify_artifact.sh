@@ -9,7 +9,7 @@ cd "$ROOT_DIR"
 
 paper_sync
 
-echo "=== Running smoke tests for the artifact workflow ==="
+echo "=== sanity tests ==="
 paper_pytest tests/test_config_manager.py tests/test_metrics.py tests/test_analysis_simple.py -q
 
 echo
@@ -39,4 +39,4 @@ do
 done
 
 echo
-echo "Artifact verification completed successfully."
+echo "Done"
