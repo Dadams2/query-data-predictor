@@ -1,0 +1,130 @@
+paper:
+  title: "Beyond Active Learning: Implicit Recommendation and Diagnostic Benchmarks for Exploratory Data Analysis [Vision]"
+  active_outputs:
+    tables:
+      - "simba_results"
+      - "adversarial_results"
+      - "sdss_results"
+    figures:
+      - "workload_comparison"
+  supplementary_outputs:
+    figures:
+      - "gap_analysis"
+      - "overlap_analysis"
+      - "decay_sensitivity"
+
+experiments:
+  simba_drilldown:
+    label: "SIMBA drill-down benchmark"
+    config: "experiments/configs/simba_drilldown.yml"
+    preferred_results_dir: "previous-results/paper/simba-drilldown"
+    preferred_analysis_csv: "previous-results/paper/simba-drilldown/analysis/summary/raw/all_sessions_metrics.csv"
+  adversarial_benchmark:
+    label: "Controlled adversarial benchmark"
+    config: "experiments/configs/benchmark_mdi_vs_baselines.yml"
+    preferred_results_dir: "previous-results/paper/adversarial-benchmark"
+    preferred_analysis_csv: "previous-results/paper/adversarial-benchmark/analysis/summary/raw/all_sessions_metrics.csv"
+  sdss_logs:
+    label: "Sampled SkyServer SQL benchmark"
+    config: "experiments/configs/sdss_vs_baselines.yml"
+    preferred_results_dir: "previous-results/paper/sdss-logs"
+    preferred_analysis_csv: "previous-results/paper/sdss-logs/analysis/summary/raw/all_sessions_metrics.csv"
+
+tables:
+  simba_results:
+    label: "Table 1: Recommendation performance at gap = 1 on SIMBA drill-down sessions"
+    experiment: "simba_drilldown"
+    gap: 1
+    order:
+      - "multidimensional_interestingness"
+      - "similarity"
+      - "frequency"
+      - "random"
+      - "clustering"
+      - "sampling"
+    display_names:
+      multidimensional_interestingness: "MDI (Ours)"
+      similarity: "Similarity"
+      frequency: "Frequency"
+      random: "Random"
+      clustering: "Clustering"
+      sampling: "Sampling"
+    expected:
+      multidimensional_interestingness: {precision: 0.292, recall: 0.283, f1_score: 0.287, overlap: 0.292}
+      similarity: {precision: 0.340, recall: 0.330, f1_score: 0.335, overlap: 0.340}
+      frequency: {precision: 0.308, recall: 0.299, f1_score: 0.303, overlap: 0.308}
+      random: {precision: 0.302, recall: 0.292, f1_score: 0.297, overlap: 0.302}
+      clustering: {precision: 0.292, recall: 0.283, f1_score: 0.287, overlap: 0.000}
+      sampling: {precision: 0.271, recall: 0.261, f1_score: 0.266, overlap: 0.271}
+  adversarial_results:
+    label: "Table 2: Recommendation performance at gap = 1 on the adversarial benchmark"
+    experiment: "adversarial_benchmark"
+    gap: 1
+    order:
+      - "multidimensional_interestingness"
+      - "clustering"
+      - "random"
+      - "sampling"
+      - "similarity"
+      - "frequency"
+    display_names:
+      multidimensional_interestingness: "MDI (Ours)"
+      similarity: "Similarity"
+      frequency: "Frequency"
+      random: "Random"
+      clustering: "Clustering"
+      sampling: "Sampling"
+    expected:
+      multidimensional_interestingness: {precision: 0.292, recall: 0.249, f1_score: 0.260, overlap: 0.295}
+      clustering: {precision: 0.248, recall: 0.183, f1_score: 0.199, overlap: 0.248}
+      random: {precision: 0.239, recall: 0.176, f1_score: 0.191, overlap: 0.243}
+      sampling: {precision: 0.239, recall: 0.176, f1_score: 0.191, overlap: 0.243}
+      similarity: {precision: 0.208, recall: 0.145, f1_score: 0.160, overlap: 0.212}
+      frequency: {precision: 0.198, recall: 0.135, f1_score: 0.150, overlap: 0.202}
+  sdss_results:
+    label: "Table 3: Recommendation performance at gap = 1 on sampled SkyServer SQL sessions"
+    experiment: "sdss_logs"
+    gap: 1
+    order:
+      - "clustering"
+      - "frequency"
+      - "random"
+      - "sampling"
+      - "similarity"
+      - "multidimensional_interestingness"
+    display_names:
+      multidimensional_interestingness: "MDI (Ours)"
+      similarity: "Similarity"
+      frequency: "Frequency"
+      random: "Random"
+      clustering: "Clustering"
+      sampling: "Sampling"
+    expected:
+      clustering: {precision: 0.037, recall: 0.033, f1_score: 0.033, overlap: 0.037}
+      frequency: {precision: 0.037, recall: 0.033, f1_score: 0.033, overlap: 0.037}
+      random: {precision: 0.037, recall: 0.033, f1_score: 0.033, overlap: 0.037}
+      sampling: {precision: 0.037, recall: 0.033, f1_score: 0.033, overlap: 0.037}
+      similarity: {precision: 0.019, recall: 0.018, f1_score: 0.018, overlap: 0.019}
+      multidimensional_interestingness: {precision: 0.014, recall: 0.012, f1_score: 0.013, overlap: 0.014}
+
+figures:
+  workload_comparison:
+    label: "Main paper figure: workload comparison"
+    outputs:
+      - "artifacts/paper/figures/workload_comparison.pdf"
+      - "artifacts/paper/figures/workload_comparison_simba.pdf"
+      - "artifacts/paper/figures/workload_comparison_adversarial.pdf"
+      - "artifacts/paper/figures/workload_comparison_sdss.pdf"
+      - "artifacts/paper/figures/workload_comparison_legend.pdf"
+  gap_analysis:
+    label: "Supplementary figure: adversarial gap analysis"
+    outputs:
+      - "artifacts/paper/figures/gap_analysis.pdf"
+  overlap_analysis:
+    label: "Supplementary figure: overlap analysis"
+    outputs:
+      - "artifacts/paper/figures/overlap_analysis.pdf"
+  decay_sensitivity:
+    label: "Supplementary figure: decay sensitivity"
+    outputs:
+      - "artifacts/paper/figures/decay_sensitivity.pdf"
