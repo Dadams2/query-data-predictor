@@ -10,8 +10,11 @@ wheels/
 .venv
 
 .env
+.cache/
+.matplotlib/
 .coverage
 data/
+data-full/
 *.ipynb
 *.log
 *.pkl
