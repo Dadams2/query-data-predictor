@@ -103,6 +103,8 @@ class ExperimentRunner:
         store_intermediate_states = self.config.get('experiment', {}).get('store_intermediate_states', False)
         results = []
         try:
+            self._reset_recommender_state_for_benchmark()
+
             # Iterate through all valid query pairs with this gap
             for current_id, future_id, current_results, future_results, current_query_text, future_query_text in \
                 self.query_result_sequence.iter_query_result_pairs_with_text(session_id, gap):
@@ -139,6 +141,20 @@ class ExperimentRunner:
         except Exception as e:
             logger.error(f"Error in adaptive size gap {gap} experiment for session {session_id}: {str(e)}", exc_info=True)
         return
+
+    def _reset_recommender_state_for_benchmark(self) -> None:
+        """
+        Reset temporal recommender state before each independent benchmark slice.
+
+        This prevents recommenders with historical memory from leaking state across
+        sessions or gap settings, which would otherwise distort results and grow
+        per-query runtime over the full reproduction run.
+        """
+        for recommender_name, recommender in self.recommenders.items():
+            clear_history = getattr(recommender, "clear_history", None)
+            if callable(clear_history):
+                clear_history()
+                logger.debug(f"Reset historical state for recommender '{recommender_name}'")
     
     def get_results(self, 
             session_id: str,

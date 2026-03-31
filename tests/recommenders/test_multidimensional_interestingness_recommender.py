@@ -202,6 +202,41 @@ def test_clear_history(basic_config, sample_data):
     assert stats_after['session_counter'] == 0
 
 
+def test_association_component_updates_scores_with_boolean_mask(basic_config):
+    """Test score updates use aligned boolean indexing safely."""
+    recommender = MultiDimensionalInterestingnessRecommender(basic_config)
+
+    encoded_df = pd.DataFrame(
+        {
+            'col1_A': [True, False, True],
+            'col2_B': [True, True, False],
+        }
+    )
+    association_rules = pd.DataFrame(
+        [
+            {
+                'antecedents': frozenset({'col1_A'}),
+                'consequents': frozenset({'col2_B'}),
+                'confidence': 1.0,
+                'support': 0.5,
+                'lift': 1.2,
+                'leverage': 0.1,
+            }
+        ]
+    )
+
+    scores = recommender._compute_association_component(
+        encoded_df=encoded_df,
+        association_rules=association_rules,
+        current_timestamp=1,
+    )
+
+    assert list(scores.index) == list(encoded_df.index)
+    assert scores.iloc[0] > 0
+    assert scores.iloc[1] == 0
+    assert scores.iloc[2] == 0
+
+
 def test_config_weights_sum():
     """Test that configuration weight sums are reasonable."""
     config = {

@@ -473,7 +473,8 @@ class MultiDimensionalInterestingnessRecommender(BaseRecommender):
             
             # Apply to tuples that match the rule (indicator function f_r(t))
             matching_mask = self._check_rule_match(encoded_df, antecedents, consequents)
-            scores[matching_mask] += weighted_score
+            if matching_mask.any():
+                scores.loc[matching_mask] = scores.loc[matching_mask] + weighted_score
         
         return scores
     
@@ -543,7 +544,8 @@ class MultiDimensionalInterestingnessRecommender(BaseRecommender):
                 
                 # Apply to tuples that match the summary (indicator function g_s(t))
                 matching_mask = self._check_summary_match(encoded_df, summary)
-                scores[matching_mask] += weighted_score
+                if matching_mask.any():
+                    scores.loc[matching_mask] = scores.loc[matching_mask] + weighted_score
         
         return scores
     
