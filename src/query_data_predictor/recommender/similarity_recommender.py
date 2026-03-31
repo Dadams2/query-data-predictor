@@ -9,6 +9,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
 from sklearn.decomposition import PCA
 import logging
+from numpy.linalg import LinAlgError
 
 from .base_recommender import BaseRecommender
 
@@ -148,6 +149,11 @@ class SimilarityRecommender(BaseRecommender):
         for col in encoded_df.columns:
             if not pd.api.types.is_numeric_dtype(encoded_df[col]):
                 encoded_df[col] = pd.to_numeric(encoded_df[col], errors='coerce').fillna(0)
+
+        # Replace non-finite values before similarity computation.
+        encoded_df = encoded_df.replace([np.inf, -np.inf], np.nan)
+        encoded_df = encoded_df.fillna(encoded_df.mean(numeric_only=True))
+        encoded_df = encoded_df.fillna(0)
         
         return encoded_df
     
@@ -164,23 +170,34 @@ class SimilarityRecommender(BaseRecommender):
         if encoded_df.empty or len(encoded_df) < 2:
             return np.ones(len(encoded_df))
         
-        # Convert to numpy array for speed
-        data_matrix = encoded_df.values.astype(np.float32)  # Use float32 for memory efficiency
-        
-        # Apply dimensionality reduction if enabled
-        if self.use_pca and data_matrix.shape[1] > 3:
+        # Convert to float64 for numerical stability and clean non-finite values.
+        data_matrix = encoded_df.to_numpy(dtype=np.float64, copy=True)
+        data_matrix[~np.isfinite(data_matrix)] = np.nan
+
+        if np.isnan(data_matrix).any():
+            col_means = np.nanmean(data_matrix, axis=0)
+            col_means = np.where(np.isnan(col_means), 0.0, col_means)
+            nan_rows, nan_cols = np.where(np.isnan(data_matrix))
+            data_matrix[nan_rows, nan_cols] = col_means[nan_cols]
+
+        # Standardize before PCA so large-magnitude columns do not dominate.
+        if data_matrix.shape[0] > 1:
+            data_matrix = self.scaler.fit_transform(data_matrix)
+            data_matrix = np.nan_to_num(data_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+
+        # Apply dimensionality reduction if enabled.
+        if self.use_pca and data_matrix.shape[1] > 3 and np.any(np.var(data_matrix, axis=0) > 0):
             n_components = self.pca_components
             if isinstance(n_components, float):
                 pca = PCA(n_components=n_components, random_state=42)
             else:
-                n_components = min(n_components, data_matrix.shape[1])
+                n_components = min(n_components, data_matrix.shape[0], data_matrix.shape[1])
                 pca = PCA(n_components=n_components, random_state=42)
-            data_matrix = pca.fit_transform(data_matrix)
-        
-        # Standardize data for better similarity computation
-        if data_matrix.shape[0] > 1:
-            data_matrix = self.scaler.fit_transform(data_matrix)
-        
+            try:
+                data_matrix = pca.fit_transform(data_matrix)
+            except (LinAlgError, ValueError, FloatingPointError) as exc:
+                logger.warning("PCA failed during similarity scoring; falling back to scaled features: %s", exc)
+
         # Compute similarity matrix efficiently
         if self.similarity_metric == 'cosine':
             similarity_matrix = cosine_similarity(data_matrix)

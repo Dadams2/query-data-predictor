@@ -231,6 +231,34 @@ class TestSimilarityRecommender:
         
         # Should handle missing values without errors
         assert isinstance(result, pd.DataFrame)
+
+    def test_non_finite_values_handling(self, sample_config):
+        """Test handling of inf values before PCA."""
+        df_with_inf = pd.DataFrame({
+            'A': [1.0, np.inf, 3.0, 4.0],
+            'B': [2.0, 3.0, -np.inf, 5.0],
+            'C': ['x', 'y', 'x', 'z'],
+            'D': [10.0, 11.0, 12.0, 13.0],
+        })
+
+        recommender = SimilarityRecommender(sample_config)
+        encoded_df = recommender._encode_dataframe_fast(df_with_inf)
+
+        assert np.isfinite(encoded_df.to_numpy(dtype=np.float64)).all()
+
+        result = recommender.recommend_tuples(df_with_inf)
+        assert isinstance(result, pd.DataFrame)
+
+    def test_pca_failure_falls_back_to_scaled_features(self, sample_config, simple_dataframe):
+        """Test PCA failures do not abort similarity scoring."""
+        recommender = SimilarityRecommender(sample_config)
+        encoded_df = recommender._encode_dataframe_fast(simple_dataframe)
+
+        with patch('query_data_predictor.recommender.similarity_recommender.PCA.fit_transform', side_effect=np.linalg.LinAlgError("Eigenvalues did not converge")):
+            scores = recommender._compute_similarity_scores_fast(encoded_df)
+
+        assert isinstance(scores, np.ndarray)
+        assert len(scores) == len(encoded_df)
     
     def test_all_recommendation_modes(self, all_recommendation_modes, simple_dataframe):
         """Test all recommendation output modes."""
