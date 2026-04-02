@@ -318,3 +318,45 @@ def test_discretization_disabled():
     
     result = recommender.recommend_tuples(df)
     assert isinstance(result, pd.DataFrame)
+
+
+def test_prepare_data_drops_identifier_like_columns(basic_config):
+    """Identifier columns should be removed before FP-Growth encoding."""
+    recommender = MultiDimensionalInterestingnessRecommender(basic_config)
+
+    df = pd.DataFrame(
+        {
+            'objid': [101, 102, 103, 104],
+            'specobjid': [201, 202, 203, 204],
+            'category': ['A', 'A', 'B', 'B'],
+            'flag': ['X', 'Y', 'X', 'Y'],
+        }
+    )
+
+    encoded_df, attributes = recommender._prepare_data_for_fpgrowth(df)
+
+    assert attributes == ['category', 'flag']
+    assert encoded_df.shape[1] > 0
+    assert all('objid_' not in column for column in encoded_df.columns)
+    assert all('specobjid_' not in column for column in encoded_df.columns)
+
+
+def test_compute_frequent_itemsets_uses_min_support_count_guard(basic_config):
+    """Small inputs should require at least two matching rows by default."""
+    recommender = MultiDimensionalInterestingnessRecommender(basic_config)
+
+    df = pd.DataFrame(
+        {
+            'col1': ['A', 'A', 'B'],
+            'col2': ['X', 'Y', 'Z'],
+            'col3': ['K', 'L', 'M'],
+        }
+    )
+
+    frequent_itemsets, encoded_df, attributes = recommender._compute_frequent_itemsets(df)
+
+    assert not encoded_df.empty
+    assert attributes == list(df.columns)
+    assert not frequent_itemsets.empty
+    assert frequent_itemsets['support'].min() >= (2 / 3)
+    assert frequent_itemsets['itemsets'].map(len).max() <= recommender.max_itemset_length
