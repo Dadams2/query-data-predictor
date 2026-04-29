@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from query_data_predictor.path_utils import resolve_stored_path
+
 
 def mode_value(series):
     m = series.mode(dropna=True)
@@ -11,12 +13,12 @@ def mode_value(series):
 
 
 def main():
-    base = Path("/Users/DAADAMS/Other/query-data-predictor/data/datasets/benchmark_mdi")
+    base = resolve_stored_path(Path("data/datasets/benchmark_mdi"))
     meta = pd.read_csv(base / "metadata.csv")
 
     for _, row in meta.iterrows():
         sid = row["session_id"]
-        session_pkl = base / row["filepath"]
+        session_pkl = resolve_stored_path(row["filepath"], anchor_dir=base)
         with open(session_pkl, "rb") as f:
             session_df = pickle.load(f)
 
@@ -35,7 +37,8 @@ def main():
             stored_query = str(qrow["current_query"])
             results_rel = str(qrow["results_filepath"])
 
-            with open(base / results_rel, "rb") as rf:
+            results_path = resolve_stored_path(results_rel, anchor_dir=base)
+            with open(results_path, "rb") as rf:
                 result_df = pickle.load(rf)
 
             predicates = [

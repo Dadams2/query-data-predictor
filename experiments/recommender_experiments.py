@@ -41,6 +41,7 @@ except ImportError:
     )
 
 from query_data_predictor.dataloader import DataLoader
+from query_data_predictor.path_utils import resolve_stored_path
 from query_data_predictor.query_result_sequence import QueryResultSequence
 from query_data_predictor.metrics import EvaluationMetrics
 from query_data_predictor.recommender import (
@@ -147,7 +148,10 @@ class RealDataQueryRunner:
             ].iloc[0]
             
             results_filepath = query_row['results_filepath']
-            results_path = Path(results_filepath)
+            results_path = resolve_stored_path(
+                results_filepath,
+                anchor_dir=self.dataloader.dataset_dir,
+            )
             
             if results_path.exists():
                 with open(results_path, 'rb') as f:

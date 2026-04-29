@@ -6,6 +6,7 @@ from query_data_predictor.query_runner import QueryRunner
 from query_data_predictor.dataset_creator import DatasetCreator
 from pathlib import Path
 from query_data_predictor.sdss_json_importer import JsonDataImporter
+from query_data_predictor.path_utils import resolve_stored_path
 
 # Load environment variables from .env file
 load_dotenv()
@@ -126,7 +127,13 @@ class TestDatasetCreator:
         
         # Check if dataset was created
         assert len(dataset_info) == 1
-        assert os.path.exists(dataset_info["filepath"][0])
+        assert not os.path.isabs(dataset_info["filepath"][0])
+
+        dataset_path = resolve_stored_path(
+            dataset_info["filepath"][0],
+            anchor_dir=dataset_creator.output_dir,
+        )
+        assert dataset_path.exists()
     
     def test_extract_result_features_with_duplicate_columns(self, dataset_creator):
         """Test that _extract_result_features handles duplicate column names correctly."""

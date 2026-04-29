@@ -1,13 +1,15 @@
 #!/bin/bash
-# filepath: /Users/DAADAMS/Other/query-data-predictor/run_with_memory_monitor.sh
+# filepath: scripts/memory_monitor.sh
+
+WORKSPACE_DIR="$(pwd -P)"
 
 # Configuration
 PYTHON_CMD="pytest -vvs tests/test_dataset_creator.py::TestDatasetCreator::test_full_build"  # Replace with your actual command
 INTERVAL=5                # Check interval in seconds
 MAX_MEMORY_PERCENT=9m     # Terminate if memory exceeds this percentage (set to 0 to disable)
-LOG_FILE="memory_usage.log"
+LOG_FILE="$WORKSPACE_DIR/memory_usage.log"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-DETAIL_LOG="memory_detail_${TIMESTAMP}.log"
+DETAIL_LOG="$WORKSPACE_DIR/memory_detail_${TIMESTAMP}.log"
 
 # Clear previous log
 echo "Time,PID,Memory(MB),CPU(%)" > "$LOG_FILE"
@@ -107,7 +109,7 @@ echo "Detailed log saved to $DETAIL_LOG"
 
 # Optional: Generate a simple plot if gnuplot is available
 if command -v gnuplot > /dev/null; then
-    PLOT_FILE="memory_plot_${TIMESTAMP}.png"
+    PLOT_FILE="$WORKSPACE_DIR/memory_plot_${TIMESTAMP}.png"
     echo "Generating memory usage plot..."
     gnuplot <<EOF
     set terminal png size 800,600

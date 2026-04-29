@@ -6,6 +6,7 @@ import pathlib
 import logging
 from typing import List, Dict, Tuple
 from query_data_predictor.importer import DataImporter
+from query_data_predictor.path_utils import resolve_stored_path
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,9 @@ class DataLoader():
         self.metadata = pd.read_csv(self.file_path)
         self.memory_cache = {}
         logger.info(f"DataLoader initialized with {len(self.metadata)} sessions from {self.file_path}")
+
+    def _resolve_stored_path(self, path_value) -> pathlib.Path:
+        return resolve_stored_path(path_value, anchor_dir=self.dataset_dir)
     
     # TODO LRU cache for results per session or something
     def _load_query_results(self, session_id: int, query_id: int) -> tuple[np.ndarray, pd.Series]:
@@ -73,7 +77,7 @@ class DataLoader():
 
         ## TODO what happens if query rows is more than 1?
         results_file_path = query_rows["results_filepath"].values[0]
-        results_path = self.dataset_dir / results_file_path
+        results_path = self._resolve_stored_path(results_file_path)
         if not results_path.exists():
             raise FileNotFoundError(f"Results file not found: {results_path}")
         # Load the actual results file
@@ -172,8 +176,7 @@ class DataLoader():
         else:
             raise ValueError("Metadata does not contain a filepath or path column")
             
-        data_path = session_rows[file_path_col].values[0]
-        data_path = self.dataset_dir / data_path
+        data_path = self._resolve_stored_path(session_rows[file_path_col].values[0])
         
         if not data_path.exists():
             raise FileNotFoundError(f"Dump file not found: {data_path}")

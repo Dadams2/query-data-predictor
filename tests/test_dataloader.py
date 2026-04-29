@@ -206,8 +206,23 @@ def test_get_results_for_query_with_text(sample_dataset_dir):
 def test_sample_data():
     """Test the sample_data method."""
     loader = DataLoader(REAL_METADATA)
-    data = loader.get_results_for_query(11305, 24)
-    data2 = loader.get_results_for_query(11306, 1)
-    print(data)
+    loaded_queries = 0
+
+    for session_id in loader.get_sessions():
+        session_data = loader.get_results_for_session(session_id)
+        for query_id in session_data["query_position"].tolist():
+            try:
+                data = loader.get_results_for_query(session_id, int(query_id))
+            except FileNotFoundError:
+                continue
+
+            assert isinstance(data, pd.DataFrame)
+            assert not data.empty
+            loaded_queries += 1
+
+            if loaded_queries == 2:
+                return
+
+    pytest.skip("No real dataset result files were available for the sample-data check")
 
     

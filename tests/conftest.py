@@ -13,14 +13,17 @@ import tempfile
 def sample_dataset_dir():
     """Create a temporary directory with sample data for testing."""
     with tempfile.TemporaryDirectory() as temp_dir:
+        def to_cwd_relative(path):
+            return os.path.relpath(path, pathlib.Path.cwd())
+
         # Create a metadata.csv file
         metadata_path = os.path.join(temp_dir, "metadata.csv")
         metadata_df = pd.DataFrame({
             "session_id": [1001, 1002, 1003],
             "path": [
-                os.path.join(temp_dir, "query_prediction_session_1001.pkl"),
-                os.path.join(temp_dir, "query_prediction_session_1002.pkl"), 
-                os.path.join(temp_dir, "query_prediction_session_1003.pkl")
+                to_cwd_relative(os.path.join(temp_dir, "query_prediction_session_1001.pkl")),
+                to_cwd_relative(os.path.join(temp_dir, "query_prediction_session_1002.pkl")), 
+                to_cwd_relative(os.path.join(temp_dir, "query_prediction_session_1003.pkl"))
             ]
         })
         metadata_df.to_csv(metadata_path, index=False)
@@ -130,7 +133,12 @@ def sample_dataset_dir():
                 "SELECT ra,dec,type FROM PhotoObj WHERE ra > 361", 
                 "SELECT ra,dec,type FROM PhotoObj WHERE dec > 39"
             ],
-            "results_filepath": [result1_path, result2_path, result3_path, result4_path],
+            "results_filepath": [
+                to_cwd_relative(result1_path),
+                to_cwd_relative(result2_path),
+                to_cwd_relative(result3_path),
+                to_cwd_relative(result4_path),
+            ],
             "query_type": ["SELECT", "SELECT", "SELECT", "SELECT"],
             "query_length": [45, 46, 45, 46],
             "token_count": [8, 8, 8, 8],
@@ -150,7 +158,11 @@ def sample_dataset_dir():
                 "SELECT ra,dec,type FROM PhotoObj WHERE dec < 41",
                 "SELECT ra,dec,type FROM PhotoObj WHERE ra > 365"
             ],
-            "results_filepath": [result5_path, result6_path, result7_path],
+            "results_filepath": [
+                to_cwd_relative(result5_path),
+                to_cwd_relative(result6_path),
+                to_cwd_relative(result7_path),
+            ],
             "query_type": ["SELECT", "SELECT", "SELECT"],
             "query_length": [45, 45, 45],
             "token_count": [8, 8, 8],
@@ -167,7 +179,7 @@ def sample_dataset_dir():
             "session_id": [1003],
             "query_position": [0],
             "current_query": ["SELECT ra,dec,type FROM PhotoObj WHERE ra > 366"],
-            "results_filepath": [result8_path],
+            "results_filepath": [to_cwd_relative(result8_path)],
             "query_type": ["SELECT"],
             "query_length": [45],
             "token_count": [8],

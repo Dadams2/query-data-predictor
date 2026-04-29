@@ -10,6 +10,7 @@ from query_data_predictor.query_runner import QueryRunner
 from query_data_predictor.importer import DataImporter
 from query_data_predictor.sdss_json_importer import JsonDataImporter
 from query_data_predictor.feature_extractor import FeatureExtractor
+from query_data_predictor.path_utils import to_cwd_relative_path
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +202,7 @@ class DatasetCreator:
                         'session_id': current_session_id,
                         'query_position': i,
                         'current_query': current_query,
-                        'results_filepath': results_filepath  # Add the path to the results file
+                        'results_filepath': to_cwd_relative_path(results_filepath)
                     }
                     all_features.update(query_features)
                     all_features.update(result_features)
@@ -220,7 +221,7 @@ class DatasetCreator:
                     # Add metadata row for the session
                     metadata_rows.append({
                         'session_id': current_session_id,
-                        'filepath': output_path
+                        'filepath': to_cwd_relative_path(output_path)
                     })
 
                     logger.info(f"Dataset for session {current_session_id} saved to {output_path} with {len(dataset_rows)} samples")
