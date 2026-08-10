@@ -52,6 +52,54 @@ query-data-predictor --help
 ```
 to see the available commands.
 
+## Local Postgres With Docker
+
+Local Postgres can be run with Docker Compose:
+
+```bash
+cp .env.example .env
+docker compose up -d
+```
+
+The Compose service starts one Postgres container and can host multiple
+databases. To restore logical backups on first startup, put them in
+`docker/postgres/backups/` before running Compose:
+
+- `sdss.sql` or `sdss.dump` restores into database `sdss`
+- `simba_sdss.sql` or `simba_sdss.dump` restores into database `simba_sdss`
+
+Backup files are ignored by git. To re-run restores from scratch:
+
+```bash
+docker compose down -v
+docker compose up -d
+```
+
+To migrate an existing local Postgres database into the Docker setup:
+
+```bash
+scripts/dump_postgres_db.sh sdss
+scripts/dump_postgres_db.sh simba_sdss
+docker compose up -d
+```
+
+The dump script reads `.env` if present and writes custom-format logical
+backups under `docker/postgres/backups/`.
+
+Database-backed recommenders can select a database in experiment YAML:
+
+```yaml
+query_runner:
+  dbname: sdss
+  user: postgres
+  password: postgres
+  host: localhost
+  port: "5432"
+```
+
+If `query_runner` is omitted, the existing env vars are still used:
+`PG_DATA`, `PG_DATA_USER`, `PG_SESSION_PASSWORD`, `PG_HOST`, and `PG_PORT`.
+
 
 ## Reproducing Experimental Results
 

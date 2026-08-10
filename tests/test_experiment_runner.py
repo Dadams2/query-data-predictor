@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 import pandas as pd
 
 from query_data_predictor.experiment_runner import ExperimentRunner
+from query_data_predictor.query_runner import QueryRunner
 
 
 class _StatefulRecommender:
@@ -37,3 +38,49 @@ def test_session_predict_with_gap_resets_stateful_recommenders(tmp_path):
 
     assert runner.recommenders['stateful'].clear_history_calls == 1
     assert runner.get_results.call_count == 2
+
+
+def test_query_runner_params_config_overrides_env(monkeypatch):
+    monkeypatch.setenv("PG_DATA", "env_db")
+    monkeypatch.setenv("PG_DATA_USER", "env_user")
+    monkeypatch.setenv("PG_SESSION_PASSWORD", "env_password")
+    monkeypatch.setenv("PG_HOST", "env_host")
+    monkeypatch.setenv("PG_PORT", "15432")
+
+    runner = ExperimentRunner.__new__(ExperimentRunner)
+    runner.config = {
+        "query_runner": {
+            "dbname": "config_db",
+            "user": "config_user",
+            "password": "config_password",
+            "host": "config_host",
+            "port": "25432",
+            "timeout": 30,
+        }
+    }
+
+    assert runner._query_runner_params() == {
+        "dbname": "config_db",
+        "user": "config_user",
+        "password": "config_password",
+        "host": "config_host",
+        "port": "25432",
+    }
+
+
+def test_query_runner_keeps_password_param():
+    runner = QueryRunner(
+        dbname="db",
+        user="user",
+        password="password",
+        host="host",
+        port="5433",
+    )
+
+    assert runner.db_params == {
+        "dbname": "db",
+        "user": "user",
+        "password": "password",
+        "host": "host",
+        "port": "5433",
+    }

@@ -10,6 +10,11 @@ output:
   output_directory: 'results/memory_reccomender'
 
 query_runner:
+  dbname: sdss
+  user: postgres
+  password: postgres
+  host: localhost
+  port: "5432"
   max_concurrent_queries: 5
   timeout: 30
 

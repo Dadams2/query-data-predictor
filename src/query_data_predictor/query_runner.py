@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 class QueryRunner:
     def __init__(self, dbname, user, host="localhost", port="5432", **kwargs):
-        self.db_params = {"dbname": dbname, "user": user, "host": host, "port": port}
+        self.db_params = {"dbname": dbname, "user": user, "host": host, "port": port, **kwargs}
         self.conn = None
         self.cursor = None
 

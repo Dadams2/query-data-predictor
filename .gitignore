@@ -10,14 +10,19 @@ wheels/
 .venv
 
 .env
+.env.local
 .cache/
 .matplotlib/
 .coverage
+docker/postgres/backups/*
+!docker/postgres/backups/.gitkeep
+!docker/postgres/backups/README.md
 data-full/
 *.ipynb
 *.log
 *.html
 debug*
 results/*
+figures/*
 simba
-presentation*
+slides/*

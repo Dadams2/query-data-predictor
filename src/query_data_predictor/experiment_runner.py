@@ -4,20 +4,17 @@ Main experiment runner for the query results prediction framework.
 
 import os
 import pandas as pd
-import numpy as np
 import warnings
-import pickle
 import json
 import signal
 import time
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
 
 from query_data_predictor.dataloader import DataLoader
 from query_data_predictor.query_result_sequence import QueryResultSequence
-from query_data_predictor.config_manager import ConfigManager
 from query_data_predictor.metrics import EvaluationMetrics
 
 from query_data_predictor.recommender import (
@@ -37,8 +34,6 @@ from query_data_predictor.recommender import (
 from query_data_predictor.query_runner import QueryRunner
 
 from contextlib import contextmanager
-
-import logging
 
 
 logger = logging.getLogger(__name__) 
@@ -99,7 +94,6 @@ class ExperimentRunner:
         return {"success": True, "session_id": session_id}
 
     def session_predict_with_gap(self, session_id: str, gap: int) -> Dict[str, Any]:
-        include_query_text = self.config.get('experiment', {}).get('include_query_text', False)
         store_intermediate_states = self.config.get('experiment', {}).get('store_intermediate_states', False)
         results = []
         try:
@@ -258,23 +252,26 @@ class ExperimentRunner:
         logger.info(f"Initialized {len(initialized_recommenders)} recommenders: {list(initialized_recommenders.keys())}")
         return initialized_recommenders
 
-    # TODO: add overrides for dotenv stuff elsewhere
+    def _query_runner_params(self) -> Dict[str, Any]:
+        load_dotenv()
+        db_config_keys = {"dbname", "user", "password", "host", "port"}
+        params = {
+            "dbname": os.getenv("PG_DATA"),
+            "user": os.getenv("PG_DATA_USER"),
+            "password": os.getenv("PG_SESSION_PASSWORD"),
+            "host": os.getenv("PG_HOST", "localhost"),
+            "port": os.getenv("PG_PORT", "5432"),
+        }
+        params.update({
+            k: v
+            for k, v in self.config.get("query_runner", {}).items()
+            if k in db_config_keys and v is not None
+        })
+        return {k: v for k, v in params.items() if v is not None}
+
     def _get_query_runner(self) -> QueryRunner:
-        if self.query_runner == None: 
-            # TODO have this actually mean something
-            query_runner_config = self.config.get('query_runner', {})
-            load_dotenv()
-            DB_NAME = os.getenv("PG_DATA")
-            DB_USER = os.getenv("PG_DATA_USER")
-            DB_HOST = os.getenv("PG_HOST", "localhost")
-            DB_PORT = os.getenv("PG_PORT", "5432")
-            self.query_runner = QueryRunner(
-                DB_NAME,
-                DB_USER,
-                host=DB_HOST,
-                port=DB_PORT,
-                **query_runner_config
-            )
+        if self.query_runner is None:
+            self.query_runner = QueryRunner(**self._query_runner_params())
             self.query_runner.connect()
         return self.query_runner
 
