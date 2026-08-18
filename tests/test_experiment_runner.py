@@ -84,3 +84,23 @@ def test_query_runner_keeps_password_param():
         "host": "host",
         "port": "5433",
     }
+
+
+def test_writes_workload_query_errors(tmp_path):
+    runner = ExperimentRunner.__new__(ExperimentRunner)
+    runner.output_dir = tmp_path
+    runner.query_result_sequence = MagicMock()
+    runner.query_result_sequence.errors = {
+        ("session", 1): {
+            "session_id": "session",
+            "query_position": 1,
+            "query": "SELECT broken",
+            "error_message": "database error",
+        }
+    }
+
+    runner._write_query_errors()
+
+    contents = (tmp_path / "query_errors.json").read_text()
+    assert "SELECT broken" in contents
+    assert "database error" in contents

@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
 
-from query_data_predictor.dataloader import DataLoader
 from query_data_predictor.query_result_sequence import QueryResultSequence
 from query_data_predictor.metrics import EvaluationMetrics
 
@@ -42,9 +41,9 @@ class ExperimentRunner:
     """
     Main class for running experiments and evaluating query predictions.
     """
-    def __init__(self, output_dir: Path, data_path: Path, sessions: List, gap: List, config: Dict[str, Any]):
+    def __init__(self, output_dir: Path, dataset: str, sessions: List, gap: List, config: Dict[str, Any]):
 
-        self.dataset_dir = data_path
+        self.dataset = dataset
         self.sessions = sessions
         self.gap = gap
         self.config = config
@@ -55,21 +54,27 @@ class ExperimentRunner:
         self.output_dir = self.output_dir / f"{experiment_name}_{timestamp}"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        self.dataloader = DataLoader(str(self.dataset_dir))
-        self.query_result_sequence = QueryResultSequence(self.dataloader)
+        self.query_runner = QueryRunner(
+            **self._query_runner_params(),
+            cache_dir=Path("data") / self.dataset,
+        )
+        self.query_result_sequence = QueryResultSequence(
+            Path("queries") / self.dataset / "queries.csv",
+            self.query_runner,
+        )
         self.metrics = EvaluationMetrics(config['evaluation'])
-        self.query_runner = None # only initalise if we need to
         self.recommenders = self._initialize_recommenders()
         logger.info(f"Initialized ExperimentRunner with config: {self.config}")
 
     def run_experiment(self):
-
-        if len(self.sessions) == 0:
-            # get all session IDs from the data loader
-            self.sessions = self.dataloader.get_sessions()
-        for session in self.sessions:
-            self.run_session_experiment(session)
-        return
+        try:
+            if len(self.sessions) == 0:
+                self.sessions = self.query_result_sequence.get_sessions()
+            for session in self.sessions:
+                self.run_session_experiment(session)
+        finally:
+            self._write_query_errors()
+            self.query_runner.disconnect()
 
     def run_session_experiment(self, session_id: str):
 
@@ -236,12 +241,11 @@ class ExperimentRunner:
                     
                     # Handle recommenders that need special initialization (QueryRunner)
                     if name in ['query_expansion', 'random_table_baseline', 'kernel_density']:
-                        query_runner = self._get_query_runner()
-                        initialized_recommenders[name] = recommender_class(self.config, query_runner=query_runner)
-                        logger.warning(f"Skipping {name} - QueryRunner implementation needed")
-                        continue
+                        recommender = recommender_class(self.config, query_runner=self.query_runner)
                     else:
-                        initialized_recommenders[name] = recommender_class(self.config)
+                        recommender = recommender_class(self.config)
+                    recommender.query_runner = self.query_runner
+                    initialized_recommenders[name] = recommender
                     
                     logger.info(f"Initialized recommender: {name}")
                 except Exception as e:
@@ -254,7 +258,9 @@ class ExperimentRunner:
 
     def _query_runner_params(self) -> Dict[str, Any]:
         load_dotenv()
-        db_config_keys = {"dbname", "user", "password", "host", "port"}
+        db_config_keys = {
+            "dbname", "user", "password", "host", "port", "statement_timeout_seconds"
+        }
         params = {
             "dbname": os.getenv("PG_DATA"),
             "user": os.getenv("PG_DATA_USER"),
@@ -269,11 +275,13 @@ class ExperimentRunner:
         })
         return {k: v for k, v in params.items() if v is not None}
 
-    def _get_query_runner(self) -> QueryRunner:
-        if self.query_runner is None:
-            self.query_runner = QueryRunner(**self._query_runner_params())
-            self.query_runner.connect()
-        return self.query_runner
+    def _write_query_errors(self) -> None:
+        errors = list(self.query_result_sequence.errors.values())
+        if not errors:
+            return
+        with open(self.output_dir / "query_errors.json", "w") as file:
+            json.dump(errors, file, indent=2, default=str)
+        logger.warning("Recorded %s workload query errors", len(errors))
 
     @contextmanager
     def _timeout(self, seconds):

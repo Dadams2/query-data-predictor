@@ -16,16 +16,17 @@ properties that exploit each baseline's weaknesses:
     signal, giving MDI an increasing advantage at larger prediction gaps.
 
 Usage:
-    python tools/generate_benchmark.py -o data/datasets/benchmark_mdi -n 3 -q 30 --seed 42
+    python tools/generate_benchmark.py --dataset benchmark_mdi -n 3 -q 30 --seed 42
     python tools/generate_benchmark.py --verify
 """
 
 import argparse
+import csv
+import io
 import pathlib
-import pickle
 import sys
 import logging
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List
 
 import numpy as np
 import pandas as pd
@@ -284,8 +285,7 @@ class QuerySequenceGenerator:
                 all_indices = np.unique(np.concatenate(
                     [rule_part, noise_part]))
                 last_large_ft_indices = all_indices
-                df = self.fact_table.iloc[all_indices].copy().reset_index(
-                    drop=True)
+                df = self.fact_table.iloc[all_indices].copy().reset_index(drop=True)
                 results.append(df)
 
             else:
@@ -298,8 +298,7 @@ class QuerySequenceGenerator:
                     indices = self.rng.choice(
                         np.arange(len(self.fact_table)),
                         size=small_size, replace=False)
-                    df = self.fact_table.iloc[indices].copy().reset_index(
-                        drop=True)
+                    df = self.fact_table.iloc[indices].copy().reset_index(drop=True)
                     results.append(df)
                     continue
 
@@ -343,8 +342,7 @@ class QuerySequenceGenerator:
 
                 future_indices = np.unique(np.concatenate(
                     [overlap_ft, fresh]))
-                df = self.fact_table.iloc[future_indices].copy().reset_index(
-                    drop=True)
+                df = self.fact_table.iloc[future_indices].copy().reset_index(drop=True)
                 results.append(df)
 
         return results
@@ -355,72 +353,97 @@ class QuerySequenceGenerator:
 # ──────────────────────────────────────────────────────────────────────────────
 
 class DatasetWriter:
-    """Writes generated data in the exact format expected by DataLoader."""
+    """Write executable workload queries and a PostgreSQL seed script."""
 
-    def __init__(self, output_dir: pathlib.Path):
-        self.output_dir = output_dir
-        self.results_dir = output_dir / "query_results"
+    def __init__(self, queries_path: pathlib.Path, sql_path: pathlib.Path):
+        self.queries_path = queries_path
+        self.sql_path = sql_path
 
-    def write(self, sessions: Dict[str, List[pd.DataFrame]]) -> None:
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.results_dir.mkdir(parents=True, exist_ok=True)
+    def write(
+        self,
+        fact_table: pd.DataFrame,
+        sessions: Dict[str, List[pd.DataFrame]],
+    ) -> None:
+        query_rows = []
+        memberships = []
+        select_columns = ", ".join(f'o."{column}"' for column in COLUMNS)
 
-        metadata_rows = []
         for session_id, query_results in sessions.items():
-            session_pkl_name = f"query_prediction_session_{session_id}.pkl"
-            self._write_session(session_id, query_results, session_pkl_name)
-            metadata_rows.append({"session_id": session_id,
-                                  "filepath": session_pkl_name})
+            for position, result in enumerate(query_results):
+                query_rows.append({
+                    "session_id": session_id,
+                    "query_position": position,
+                    "query": (
+                        f"SELECT {select_columns} FROM orders o "
+                        "JOIN query_membership m ON m.row_id = o.row_id "
+                        f"WHERE m.session_id = '{session_id}' "
+                        f"AND m.query_position = {position} ORDER BY m.ordinal"
+                    ),
+                })
+                memberships.extend(
+                    (session_id, position, int(row_id), ordinal)
+                    for ordinal, row_id in enumerate(result["_row_id"])
+                )
 
-        metadata_df = pd.DataFrame(metadata_rows)
-        metadata_df.to_csv(self.output_dir / "metadata.csv", index=False)
-        logger.info(f"Wrote metadata.csv with {len(metadata_rows)} sessions")
-
-    def _write_session(self, session_id: str,
-                       query_results: List[pd.DataFrame],
-                       session_pkl_name: str) -> None:
-        session_rows = []
-        for pos, result_df in enumerate(query_results):
-            results_filename = (
-                f"results_session_{session_id}_query_{pos}.pkl")
-            results_rel_path = f"query_results/{results_filename}"
-
-            with open(self.results_dir / results_filename, "wb") as f:
-                pickle.dump(result_df, f, protocol=pickle.HIGHEST_PROTOCOL)
-
-            query_text = self._synthetic_sql(session_id, pos, result_df)
-            session_rows.append({
-                "session_id": session_id,
-                "query_position": pos,
-                "results_filepath": results_rel_path,
-                "current_query": query_text,
-            })
-
-        session_df = pd.DataFrame(session_rows)
-        with open(self.output_dir / session_pkl_name, "wb") as f:
-            pickle.dump(session_df, f, protocol=pickle.HIGHEST_PROTOCOL)
+        self.queries_path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(query_rows).to_csv(self.queries_path, index=False)
+        self.sql_path.parent.mkdir(parents=True, exist_ok=True)
+        self.sql_path.write_text(
+            self._database_sql(fact_table, memberships),
+            encoding="utf-8",
+        )
+        logger.info("Wrote %s and %s", self.queries_path, self.sql_path)
 
     @staticmethod
-    def _synthetic_sql(session_id: str, pos: int,
-                       df: pd.DataFrame) -> str:
-        if len(df) > 0:
-            region = (df["region"].mode().iloc[0]
-                      if not df["region"].mode().empty else "ASIA")
-            category = (df["category"].mode().iloc[0]
-                        if not df["category"].mode().empty else "TECHNOLOGY")
-        else:
-            region, category = "ASIA", "TECHNOLOGY"
-        return (
-            f"SELECT * FROM orders WHERE region = '{region}' "
-            f"AND category = '{category}' "
-            f"/* session={session_id} pos={pos} */")
+    def _copy_block(columns, rows):
+        output = io.StringIO()
+        writer = csv.writer(output, lineterminator="\n")
+        writer.writerow(columns)
+        writer.writerows(rows)
+        return output.getvalue()
+
+    def _database_sql(self, fact_table, memberships):
+        orders = self._copy_block(
+            ["row_id", *COLUMNS],
+            fact_table[["_row_id", *COLUMNS]].itertuples(index=False, name=None),
+        )
+        membership = self._copy_block(
+            ["session_id", "query_position", "row_id", "ordinal"],
+            memberships,
+        )
+        column_sql = ",\n    ".join(f'"{column}" text NOT NULL' for column in COLUMNS)
+        return f"""SELECT 'CREATE DATABASE benchmark_mdi'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'benchmark_mdi')\\gexec
+\\connect benchmark_mdi
+
+DROP TABLE IF EXISTS query_membership;
+DROP TABLE IF EXISTS orders;
+CREATE TABLE orders (
+    row_id integer PRIMARY KEY,
+    {column_sql}
+);
+CREATE TABLE query_membership (
+    session_id text NOT NULL,
+    query_position integer NOT NULL,
+    row_id integer NOT NULL REFERENCES orders(row_id),
+    ordinal integer NOT NULL,
+    PRIMARY KEY (session_id, query_position, ordinal)
+);
+
+COPY orders FROM STDIN WITH (FORMAT CSV, HEADER TRUE);
+{orders}\\.
+COPY query_membership FROM STDIN WITH (FORMAT CSV, HEADER TRUE);
+{membership}\\.
+CREATE INDEX query_membership_lookup
+ON query_membership (session_id, query_position, ordinal);
+"""
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Config generation
 # ──────────────────────────────────────────────────────────────────────────────
 
-def generate_experiment_config(output_path: pathlib.Path, dataset_dir: str,
+def generate_experiment_config(output_path: pathlib.Path, dataset: str,
                                session_ids: List[str]) -> None:
     config = {
         "output": {
@@ -441,11 +464,12 @@ def generate_experiment_config(output_path: pathlib.Path, dataset_dir: str,
             ],
             "mode": "cheating",
             "include_query_text": False,
-            "data_path": dataset_dir,
+            "dataset": dataset,
             "store_intermediate_states": False,
             "sessions": session_ids,
             "prediction_gap": [1, 2, 3, 5, 10],
         },
+        "query_runner": {"dbname": "benchmark_mdi"},
         "multidimensional_interestingness": {
             "alpha": 0.5,
             "beta": 0.3,
@@ -570,6 +594,7 @@ def run_verify(seed: int = 42) -> None:
     print("Generating fact table (3000 rows)...")
     schema_gen = BenchmarkSchemaGenerator(rng, total_rows=3000)
     fact_table = schema_gen.generate()
+    fact_table.insert(0, "_row_id", np.arange(len(fact_table)))
 
     rule_mask = QuerySequenceGenerator(fact_table, rng)._build_rule_mask()
     print(f"  Rule-conforming rows: {rule_mask.sum()} / {len(fact_table)} "
@@ -584,26 +609,12 @@ def run_verify(seed: int = 42) -> None:
     # File format validation
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = pathlib.Path(tmpdir)
-        writer = DatasetWriter(tmpdir)
-        writer.write({"verify_s1": query_results})
-
-        assert (tmpdir / "metadata.csv").exists(), "metadata.csv missing"
-        meta = pd.read_csv(tmpdir / "metadata.csv")
-        assert "session_id" in meta.columns
-        assert "filepath" in meta.columns
-
-        session_pkl = tmpdir / meta["filepath"].iloc[0]
-        with open(session_pkl, "rb") as f:
-            session_df = pickle.load(f)
-        for col in ["session_id", "query_position", "results_filepath",
-                     "current_query"]:
-            assert col in session_df.columns, f"Missing column: {col}"
-
-        results_path = tmpdir / session_df["results_filepath"].iloc[0]
-        with open(results_path, "rb") as f:
-            result_df = pickle.load(f)
-        for col in COLUMNS:
-            assert col in result_df.columns, f"Missing schema column: {col}"
+        writer = DatasetWriter(tmpdir / "queries.csv", tmpdir / "benchmark.sql")
+        writer.write(fact_table, {"verify_s1": query_results})
+        queries = pd.read_csv(tmpdir / "queries.csv")
+        assert list(queries.columns) == ["session_id", "query_position", "query"]
+        assert len(queries) == n_queries
+        assert "CREATE TABLE query_membership" in (tmpdir / "benchmark.sql").read_text()
         print("  File format validation: PASSED")
 
     # --- Run all recommenders at multiple gaps ---
@@ -626,8 +637,8 @@ def run_verify(seed: int = 42) -> None:
 
         pairs_tested = 0
         for i in range(len(query_results) - gap):
-            current = query_results[i]
-            future = query_results[i + gap]
+            current = query_results[i][COLUMNS]
+            future = query_results[i + gap][COLUMNS]
 
             # Only test "critical" pairs where current is large and future
             # is small (even→odd for gap=1, but for larger gaps test all).
@@ -691,9 +702,12 @@ def main():
         description="Generate synthetic benchmark datasets for query data "
                     "predictor evaluation.")
     parser.add_argument(
-        "-o", "--output", type=str,
-        default="data/datasets/benchmark_mdi",
-        help="Output directory for the generated dataset")
+        "--dataset", type=str, default="benchmark_mdi",
+        help="Dataset directory name under queries/")
+    parser.add_argument(
+        "--sql-output", type=str,
+        default="docker/postgres/init/10-benchmark_mdi.sql",
+        help="PostgreSQL initialization script path")
     parser.add_argument(
         "-n", "--num-sessions", type=int, default=3,
         help="Number of sessions to generate")
@@ -729,12 +743,14 @@ def main():
         return
 
     rng = np.random.default_rng(args.seed)
-    output_dir = pathlib.Path(args.output)
+    queries_path = pathlib.Path("queries") / args.dataset / "queries.csv"
+    sql_path = pathlib.Path(args.sql_output)
 
     # 1. Generate fact table
     print(f"Generating fact table ({args.total_rows} rows)...")
     schema_gen = BenchmarkSchemaGenerator(rng, total_rows=args.total_rows)
     fact_table = schema_gen.generate()
+    fact_table.insert(0, "_row_id", np.arange(len(fact_table)))
 
     rule_mask = QuerySequenceGenerator(fact_table, rng)._build_rule_mask()
     print(f"  Rule-conforming rows: {rule_mask.sum()} / {len(fact_table)} "
@@ -752,9 +768,9 @@ def main():
         sessions[sid] = seq_gen.generate_session(sid)
 
     # 3. Write dataset
-    print(f"Writing dataset to {output_dir}/...")
-    writer = DatasetWriter(output_dir)
-    writer.write(sessions)
+    print(f"Writing workload to {queries_path}...")
+    writer = DatasetWriter(queries_path, sql_path)
+    writer.write(fact_table, sessions)
 
     # 4. Write experiment config
     config_path = (
@@ -762,16 +778,16 @@ def main():
         else pathlib.Path(
             "experiments/configs/benchmark_mdi_vs_baselines.yml"))
     session_ids = list(sessions.keys())
-    generate_experiment_config(config_path, str(output_dir), session_ids)
+    generate_experiment_config(config_path, args.dataset, session_ids)
 
-    print(f"\nDone! Generated:")
-    print(f"  Dataset:    {output_dir}/")
+    print("\nDone! Generated:")
+    print(f"  Queries:    {queries_path}")
+    print(f"  Database:   {sql_path}")
     print(f"  Config:     {config_path}")
     print(f"  Sessions:   {session_ids}")
-    print(f"\nTo run the experiment:")
-    print(f"  python -m query_data_predictor.experiment_runner "
-          f"--config {config_path}")
-    print(f"\nTo verify the benchmark:")
+    print("\nTo run the experiment:")
+    print(f"  query-data-predictor run-experiment --config {config_path}")
+    print("\nTo verify the benchmark:")
     print(f"  python tools/generate_benchmark.py --verify --seed {args.seed}")
 
 

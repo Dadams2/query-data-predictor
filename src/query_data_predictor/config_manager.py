@@ -4,11 +4,10 @@ Using Pydantic for validation of configuration settings.
 """
 
 import yaml
-import os
 import json
 from typing import Dict, Any, List, Optional, Union, Literal
 from pathlib import Path
-from pydantic import BaseModel, Field, validator, root_validator
+from pydantic import BaseModel, Field, field_validator
 import logging
 
 logger = logging.getLogger(__name__)
@@ -30,7 +29,7 @@ class AssociationRulesConfig(BaseModel):
     min_threshold: float = Field(0.7, ge=0.0, le=1.0)
     max_len: Optional[int] = None
     
-    @validator("max_len")
+    @field_validator("max_len")
     def validate_max_len(cls, v):
         if v is not None and v <= 0:
             raise ValueError("max_len must be positive if specified")
@@ -47,7 +46,7 @@ class InterestingnessConfig(BaseModel):
     enabled: bool = True
     measures: List[str] = ["variance", "simpson", "shannon"]
     
-    @validator("measures")
+    @field_validator("measures")
     def validate_measures(cls, v):
         valid_measures = {"variance", "simpson", "shannon", "total", "max", "mcintosh", "gini"}
         for measure in v:
@@ -68,7 +67,7 @@ class EvaluationConfig(BaseModel):
     jaccard_threshold: float = Field(0.5, ge=0.0, le=1.0)
     column_weights: Optional[Dict[str, float]] = None
     
-    @validator("metrics")
+    @field_validator("metrics")
     def validate_metrics(cls, v):
         valid_metrics = {
             "accuracy", "overlap", "jaccard", "precision", "recall", "f1", 
@@ -86,16 +85,32 @@ class OutputConfig(BaseModel):
     save_format: Literal["pkl", "csv", "json"] = "pkl"
 
 
+class QueryRunnerConfig(BaseModel):
+    dbname: str = "sdss"
+    user: Optional[str] = None
+    password: Optional[str] = None
+    host: Optional[str] = None
+    port: Optional[str] = None
+    statement_timeout_seconds: Optional[int] = Field(120, gt=0)
+
+
 class ExperimentSettingsConfig(BaseModel):
     name: str = "default_experiment"
-    prediction_gap: int = Field(1, ge=1)
+    prediction_gap: Union[int, List[int]] = 1
     random_seed: int = 42
     sessions_limit: Optional[int] = None
     # sessions is a list and datapath is a path
-    sessions: List[int] = Field(default_factory=list)
-    data_path: str = "data"
+    sessions: List[Union[int, str]] = Field(default_factory=list)
+    dataset: str = "sdss"
 
-    @validator("sessions_limit")
+    @field_validator("prediction_gap")
+    def validate_prediction_gap(cls, value):
+        gaps = value if isinstance(value, list) else [value]
+        if not gaps or any(gap < 1 for gap in gaps):
+            raise ValueError("prediction_gap values must be positive")
+        return value
+
+    @field_validator("sessions_limit")
     def validate_sessions_limit(cls, v):
         if v is not None and v <= 0:
             raise ValueError("sessions_limit must be positive if specified")
@@ -111,6 +126,7 @@ class ExperimentConfig(BaseModel):
     recommendation: RecommendationConfig = RecommendationConfig()
     evaluation: EvaluationConfig = EvaluationConfig()
     output: OutputConfig = OutputConfig()
+    query_runner: QueryRunnerConfig = QueryRunnerConfig()
 
 
 class ConfigManager:

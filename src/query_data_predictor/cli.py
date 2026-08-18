@@ -7,8 +7,6 @@ import logging
 import yaml
 from pathlib import Path
 from typing import Optional
-from datetime import datetime
-from query_data_predictor.analysis import ResultsAnalyzer
 from query_data_predictor.config_manager import ConfigManager
 from query_data_predictor.experiment_runner import ExperimentRunner
 from query_data_predictor.logging_config import setup_logging
@@ -32,11 +30,13 @@ def main(ctx, verbose):
 @main.command()
 @click.option('--config', '-c', 
               type=click.Path(exists=True, path_type=Path),
+              default='config.yaml',
+              show_default=True,
               help='Path to configuration file (YAML)')
-@click.option('--data-path', '-d',
-              type=click.Path(exists=True, path_type=Path),
+@click.option('--dataset', '-d',
+              type=str,
               required=False,
-              help='Path to the dataset directory containing metadata.csv')
+              help='Dataset name under queries/ and data/')
 @click.option('--session-id', '-s',
               help='Specific session ID to run experiment for')
 @click.option('--gap', '-g',
@@ -46,7 +46,7 @@ def main(ctx, verbose):
               type=click.Path(path_type=Path),
               help='Output directory for results')
 @click.pass_context
-def run_experiment(ctx, config, data_path, session_id, gap, output):
+def run_experiment(ctx, config, dataset, session_id, gap, output):
     """Run prediction experiment on query data."""
     click.echo("Starting query prediction experiment...")
 
@@ -58,8 +58,10 @@ def run_experiment(ctx, config, data_path, session_id, gap, output):
         config = yaml.safe_load(f)
 
     # get values from config but overwrite with args if they exist
-    data_path = data_path or config.get('experiment', {}).get('data_path', None)
-    sessions = session_id or config.get('experiment', {}).get('sessions', [])
+    dataset = dataset or config.get('experiment', {}).get('dataset')
+    if not dataset:
+        raise click.ClickException("experiment.dataset is required")
+    sessions = [session_id] if session_id else config.get('experiment', {}).get('sessions', [])
     prediction_gap = [gap] if gap else config.get('experiment', {}).get('prediction_gap', [])
     output_dir = output or config.get('output', {}).get('output_directory', None)
 
@@ -69,17 +71,14 @@ def run_experiment(ctx, config, data_path, session_id, gap, output):
     else:
         output_dir = Path.cwd().resolve() / 'results'
 
-    # resolve data path (remove and resolve ../../)
-    data_path = Path(data_path).resolve()
-
     try:
-        logger.info(f"Using data path: {data_path}")
+        logger.info(f"Using dataset: {dataset}")
         logger.info(f"Using output directory: {output_dir}")
         logger.info(f"Using session IDs: {sessions}")
 
         runner = ExperimentRunner(
             output_dir=output_dir,
-            data_path=data_path,
+            dataset=dataset,
             sessions=sessions,
             gap=prediction_gap,
             config=config
@@ -87,7 +86,7 @@ def run_experiment(ctx, config, data_path, session_id, gap, output):
 
         runner.run_experiment()
 
-        logger.info(f"Completed recommender experiment for all sessions")
+        logger.info("Completed recommender experiment for all sessions")
 
     except Exception as e:
         click.echo(f"Error running experiment: {e}", err=True)
@@ -154,9 +153,13 @@ def generate_config(output):
 
 experiment:
   name: 'sample_experiment'
-  prediction_gap: 1
+  dataset: sdss
+  prediction_gap: [1]
   random_seed: 42
   sessions_limit: null  # null for all sessions, integer for limited number
+
+query_runner:
+  dbname: sdss
 
 discretization:
   enabled: true
@@ -334,11 +337,13 @@ def analyze_simple(ctx, config, results_path):
 @main.command()
 @click.option('--config', '-c', 
               type=click.Path(exists=True, path_type=Path),
+              default='config.yaml',
+              show_default=True,
               help='Path to configuration file (YAML)')
-@click.option('--data-path', '-d',
-              type=click.Path(exists=True, path_type=Path),
+@click.option('--dataset', '-d',
+              type=str,
               required=False,
-              help='Path to the dataset directory containing metadata.csv')
+              help='Dataset name under queries/ and data/')
 @click.option('--session-id', '-s',
               help='Specific session ID to run experiment for')
 @click.option('--gap', '-g',
@@ -349,7 +354,7 @@ def analyze_simple(ctx, config, results_path):
               type=click.Path(path_type=Path),
               help='Output directory for results')
 @click.pass_context
-def run_and_analyze(ctx, config, data_path, session_id, gap, output):
+def run_and_analyze(ctx, config, dataset, session_id, gap, output):
     """Run prediction experiment and immediately analyze the results."""
     click.echo("Starting experiment and analysis pipeline...")
     
@@ -357,7 +362,7 @@ def run_and_analyze(ctx, config, data_path, session_id, gap, output):
     try:
         ctx.invoke(run_experiment, 
                   config=config, 
-                  data_path=data_path, 
+                  dataset=dataset,
                   session_id=session_id, 
                   gap=gap, 
                   output=output)
