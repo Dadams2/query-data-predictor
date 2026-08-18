@@ -62,10 +62,13 @@ docker compose up -d
 ```
 
 The Compose service starts one Postgres container and can host multiple
-databases. To restore logical backups on first startup, put them in
+databases. The generated `benchmark_mdi` database is initialized directly
+from `docker/postgres/init/10-benchmark_mdi.sql`. To restore the other logical
+backups on first startup, put them in
 `docker/postgres/backups/` before running Compose:
 
 - `sdss.sql` or `sdss.dump` restores into database `sdss`
+- `simba_circactivity.sql` or `simba_circactivity.dump` restores into database `simba_circactivity`
 - `simba_sdss.sql` or `simba_sdss.dump` restores into database `simba_sdss`
 
 Backup files are ignored by git. To re-run restores from scratch:
@@ -86,19 +89,42 @@ docker compose up -d
 The dump script reads `.env` if present and writes custom-format logical
 backups under `docker/postgres/backups/`.
 
-Database-backed recommenders can select a database in experiment YAML:
+Each experiment selects its workload and database in YAML:
 
 ```yaml
+experiment:
+  dataset: sdss
+
 query_runner:
   dbname: sdss
-  user: postgres
-  password: postgres
-  host: localhost
-  port: "5432"
 ```
 
-If `query_runner` is omitted, the existing env vars are still used:
-`PG_DATA`, `PG_DATA_USER`, `PG_SESSION_PASSWORD`, `PG_HOST`, and `PG_PORT`.
+Credentials and connection location come from `PG_DATA_USER`,
+`PG_SESSION_PASSWORD`, `PG_HOST`, and `PG_PORT`. Workload queries are read from
+`queries/<dataset>/queries.csv`.
+
+## Query Result Cache
+
+PostgreSQL is the source of truth. On the first run, each query result is
+written to `data/<dataset>/<database>/<sha256>.parquet` with a matching `.sql`
+file. Later runs read the Parquet file first, so a fully populated experiment
+can run while PostgreSQL is unavailable.
+
+Inspect a cache entry with pandas:
+
+```bash
+uv run python -c "import pandas as pd; print(pd.read_parquet('data/sdss/sdss/FILE.parquet').head())"
+```
+
+The matching `FILE.sql` identifies the query. Invalidate a dataset cache with:
+
+```bash
+rm -rf data/sdss
+```
+
+Failed queries are not cached. They are recorded in `query_errors.json` under
+the timestamped experiment result directory, and pairs involving them are
+skipped.
 
 
 ## Reproducing Experimental Results
@@ -150,14 +176,14 @@ This mode uses the standardized snapshots stored under:
 
 ## Generating Your Own Adversarial Benchmark
 
-To create a fresh adversarial benchmark dataset instead of using the bundled
-one:
+To recreate the database-backed adversarial benchmark:
 
 ```bash
 source scripts/paper_env.sh
 paper_sync
 paper_python tools/generate_benchmark.py \
-  --output data/datasets/benchmark_custom \
+  --dataset benchmark_custom \
+  --sql-output docker/postgres/init/10-benchmark_mdi.sql \
   --config-output experiments/configs/benchmark_custom.yml \
   --num-sessions 3 \
   --queries-per-session 30 \
@@ -165,9 +191,10 @@ paper_python tools/generate_benchmark.py \
   --seed 42
 ```
 
-This will:
+This writes:
 
-- create a new synthetic dataset in `data/datasets/benchmark_custom/`
+- `queries/benchmark_custom/queries.csv`
+- a PostgreSQL initialization script containing the fact and query-membership tables
 - write a matching experiment config to `experiments/configs/benchmark_custom.yml`
 
 Then run the experiment and analysis:
@@ -205,13 +232,17 @@ That sweep is also multi-hour and regenerates the supplementary
 
 ## Data Used
 
-The repository includes these benchmark datasets:
+The repository tracks workload queries rather than query results:
 
-- `data/datasets/simba_drilldown/` generated with SIMBA
-- `data/datasets/benchmark_mdi/` generated with the MDI generator
-- `data/datasets/` generated from skyserver SQL sessions
+- `queries/sdss/queries.csv`
+- `queries/simba_simple/queries.csv`
+- `queries/simba_complex/queries.csv`
+- `queries/simba_drilldown/queries.csv`
+- `queries/simba_sdss/queries.csv`
+- `queries/benchmark_mdi/queries.csv`
 
-The SDSS corpus metadata includes 463 sessions in `data/datasets/metadata.csv`.
+The SDSS workload includes 463 sessions. Query result data is generated into
+the ignored `data/` cache as experiments run.
 The reproduced SDSS benchmark uses the fixed session subset listed in
 `experiments/configs/sdss_vs_baselines.yml`.
 
