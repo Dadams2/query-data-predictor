@@ -14,7 +14,7 @@ experiment:
   - sampling
   mode: cheating
   include_query_text: false
-  data_path: data/datasets/benchmark_mdi
+  dataset: benchmark_mdi
   store_intermediate_states: false
   sessions:
   - benchmark_s1
@@ -26,6 +26,8 @@ experiment:
   - 3
   - 5
   - 10
+query_runner:
+  dbname: benchmark_mdi
 multidimensional_interestingness:
   alpha: 0.5
   beta: 0.3

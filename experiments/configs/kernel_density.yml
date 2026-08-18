@@ -12,10 +12,6 @@ output:
 
 query_runner:
   dbname: simba_sdss
-  user: postgres
-  password: postgres
-  host: localhost
-  port: "5432"
 
 experiment:
   name: "kernel_density"
@@ -28,7 +24,7 @@ experiment:
     - sampling
   mode: "normal"
   include_query_text: true  # Required for SQL parsing in kernel_density
-  data_path: 'data/datasets/simba_SDSS'
+  dataset: simba_sdss
   store_intermediate_states: false
   sessions: [2]
   prediction_gap: [1, 2, 3, 5]

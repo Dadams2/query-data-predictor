@@ -14,13 +14,16 @@ output:
   save_summaries: false
   output_directory: 'results/memory_reccomender'
 
+query_runner:
+  dbname: sdss
+
 experiment:
   name: "multidimensional_interestingness_test"
   recommenders:
     - multidimensional_interestingness
   mode: "normal"  # or "cheating" to match future result size
   include_query_text: false
-  data_path: 'data/datasets'
+  dataset: sdss
   store_intermediate_states: false
   # sessions: [11305, 11146, 11139, 12255, 12331, 12337]
   sessions: [11146]

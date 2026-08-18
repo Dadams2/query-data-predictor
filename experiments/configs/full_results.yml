@@ -10,12 +10,15 @@ output:
   save_summaries: false
   output_directory: 'results/full/simple_experiment'
 
+query_runner:
+  dbname: sdss
+
 experiment:
   name: 'sample_experiment'
   # prediction_gap: [1, 2, 3, 4, 5] 
   prediction_gap: [1, 2, 3, 4, 5, 6,7,8,9,10,11,12,13,14,15] 
   sessions: [] # all sessions
-  data_path: 'data/datasets'
+  dataset: sdss
   session_selection_strategy: diverse
   recommenders: [dummy, random, clustering, query_expansion]
   include_query_text: true

@@ -11,6 +11,9 @@ output:
   save_summaries: false
   output_directory: 'results/sdss_vs_baselines'
 
+query_runner:
+  dbname: sdss
+
 experiment:
   name: "sdss_vs_baselines"
   recommenders:
@@ -22,7 +25,7 @@ experiment:
     - sampling
   mode: "cheating"
   include_query_text: false
-  data_path: 'data/datasets'
+  dataset: sdss
   store_intermediate_states: false
   sessions:
     - 12050

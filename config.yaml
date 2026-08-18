@@ -3,9 +3,13 @@
 
 experiment:
   name: 'default_experiment'
-  prediction_gap: 1
+  dataset: sdss
+  prediction_gap: [1]
   random_seed: 42
   sessions_limit: null  # null for all sessions, integer for limited number
+
+query_runner:
+  dbname: sdss
 
 discretization:
   enabled: true

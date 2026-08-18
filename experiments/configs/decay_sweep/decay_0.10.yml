@@ -4,13 +4,15 @@ output:
   save_summaries: false
   output_directory: 'results/decay_sweep/decay_0.10'
 
+query_runner:
+  dbname: benchmark_mdi
 experiment:
   name: "decay_sweep_0.10"
   recommenders:
     - multidimensional_interestingness
   mode: cheating
   include_query_text: false
-  data_path: data/datasets/benchmark_mdi
+  dataset: benchmark_mdi
   store_intermediate_states: false
   sessions:
     - benchmark_s1

@@ -11,12 +11,7 @@ output:
 
 query_runner:
   dbname: sdss
-  user: postgres
-  password: postgres
-  host: localhost
-  port: "5432"
-  max_concurrent_queries: 5
-  timeout: 30
+  statement_timeout_seconds: 30
 
 experiment:
   name: 'sample_experiment'
@@ -24,7 +19,7 @@ experiment:
   prediction_gap: [1,3] 
   sessions: [11305] 
   # sessions: [11073] 
-  data_path: 'data/datasets'
+  dataset: sdss
   session_selection_strategy: diverse
   # recommenders: [dummy, random, clustering, interestingness, sampling, frequency]
   recommenders: [query_expansion, random_table_baseline]

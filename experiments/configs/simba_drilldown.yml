@@ -14,6 +14,9 @@ output:
   save_summaries: false
   output_directory: 'results/simba_drilldown'
 
+query_runner:
+  dbname: simba_circactivity
+
 experiment:
   name: "simba_drilldown"
   recommenders:
@@ -25,7 +28,7 @@ experiment:
     - sampling
   mode: "cheating"
   include_query_text: false
-  data_path: 'data/datasets/simba_drilldown'
+  dataset: simba_drilldown
   store_intermediate_states: false
   sessions: [0]
   prediction_gap: [1,2,3,5,10]

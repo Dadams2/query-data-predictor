@@ -14,6 +14,9 @@ output:
   save_summaries: false
   output_directory: 'results/simba_sdss'
 
+query_runner:
+  dbname: simba_sdss
+
 experiment:
   name: "simba_sdss"
   recommenders:
@@ -23,7 +26,7 @@ experiment:
     - sampling
   mode: "normal"  # or "cheating" to match future result size
   include_query_text: false
-  data_path: 'data/datasets/simba_SDSS'
+  dataset: simba_sdss
   store_intermediate_states: false
   sessions: [2]
   prediction_gap: [1,2,3,5]
