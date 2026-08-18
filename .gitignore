@@ -18,6 +18,7 @@ docker/postgres/backups/*
 !docker/postgres/backups/.gitkeep
 !docker/postgres/backups/README.md
 data-full/
+data/
 *.ipynb
 *.log
 *.html
