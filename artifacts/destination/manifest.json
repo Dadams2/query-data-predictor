@@ -1,0 +1,265 @@
+{
+  "protocol": "destination-benchmark-v1",
+  "seeds": [
+    100,
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109
+  ],
+  "methods": [
+    "mdi",
+    "mdi_original",
+    "association_only",
+    "mdi_with_delta",
+    "delta_only",
+    "mdi_reset",
+    "mdi_decay0",
+    "mdi_decay020",
+    "recurrence",
+    "predicate_match",
+    "frequency",
+    "similarity",
+    "clustering",
+    "random"
+  ],
+  "kinds": [
+    "structural",
+    "distributional",
+    "compositional"
+  ],
+  "conditions": [
+    "clear",
+    "ambiguous",
+    "detour",
+    "switch",
+    "null"
+  ],
+  "exposures": [
+    "holdout",
+    "exposed"
+  ],
+  "benchmark_config": {
+    "n_rows": 12000,
+    "price_log_mean": 4.0,
+    "price_log_sigma": 0.35,
+    "structural_confidence": 0.8,
+    "tail_fraction": 0.25,
+    "tail_multiplier": 4.0,
+    "tail_quantile": 0.99,
+    "compositional_confidence": 0.9,
+    "query_limit": 200,
+    "panel_extension": 15,
+    "panel_context_other": 10,
+    "panel_background": 50
+  },
+  "mdi_config": {
+    "discretization": {
+      "enabled": true,
+      "method": "equal_freq",
+      "bins": 5,
+      "save_params": false
+    },
+    "association_rules": {
+      "min_support": 0.08,
+      "min_threshold": 0.1
+    },
+    "summaries": {
+      "desired_size": 10
+    },
+    "recommendation": {
+      "mode": "top_k",
+      "top_k": 25
+    },
+    "multidimensional_interestingness": {
+      "alpha": 0.4,
+      "beta": 0.4,
+      "gamma": 0.2,
+      "rule_decay_rate": 0.05,
+      "summary_decay_rate": 0.1,
+      "association_weights": {
+        "confidence": 0.3,
+        "support": 0.2,
+        "lift": 0.3,
+        "j_measure": 0.2
+      },
+      "diversity_weights": {
+        "shannon": 0.25,
+        "simpson": 0.2,
+        "gini": 0.2,
+        "berger": 0.15,
+        "mcintosh": 0.2
+      },
+      "delta_weight": 0.0,
+      "delta_decay_rate": 0.1,
+      "normalize_components": true,
+      "diversity_mode": "attribute",
+      "narrowing_margin": 0.05
+    }
+  },
+  "mdi_original_config": {
+    "discretization": {
+      "enabled": true,
+      "method": "equal_width",
+      "bins": 5,
+      "save_params": false
+    },
+    "association_rules": {
+      "min_support": 0.08,
+      "min_threshold": 0.1
+    },
+    "summaries": {
+      "desired_size": 10
+    },
+    "recommendation": {
+      "mode": "top_k",
+      "top_k": 25
+    },
+    "multidimensional_interestingness": {
+      "alpha": 0.5,
+      "beta": 0.3,
+      "gamma": 0.2,
+      "rule_decay_rate": 0.05,
+      "summary_decay_rate": 0.1,
+      "association_weights": {
+        "confidence": 0.3,
+        "support": 0.2,
+        "lift": 0.3,
+        "j_measure": 0.2
+      },
+      "diversity_weights": {
+        "shannon": 0.25,
+        "simpson": 0.2,
+        "gini": 0.2,
+        "berger": 0.15,
+        "mcintosh": 0.2
+      }
+    }
+  },
+  "schema": {
+    "region": [
+      "ASIA",
+      "EUROPE",
+      "AMERICA",
+      "AFRICA",
+      "MIDDLE_EAST"
+    ],
+    "category": [
+      "TECHNOLOGY",
+      "HEALTHCARE",
+      "AUTOMOTIVE",
+      "FINANCE",
+      "RETAIL"
+    ],
+    "priority": [
+      "LOW",
+      "STANDARD",
+      "URGENT"
+    ],
+    "ship_mode": [
+      "AIR",
+      "SEA",
+      "RAIL",
+      "TRUCK"
+    ],
+    "channel": [
+      "ONLINE",
+      "STORE",
+      "PHONE"
+    ]
+  },
+  "contexts": {
+    "structural": [
+      {
+        "region": "ASIA",
+        "category": "TECHNOLOGY"
+      },
+      {
+        "region": "ASIA",
+        "category": "HEALTHCARE"
+      }
+    ],
+    "distributional": [
+      {
+        "region": "EUROPE",
+        "category": "FINANCE"
+      },
+      {
+        "region": "EUROPE",
+        "category": "RETAIL"
+      }
+    ],
+    "compositional": [
+      {
+        "region": "AMERICA",
+        "category": "AUTOMOTIVE"
+      },
+      {
+        "region": "AMERICA",
+        "category": "TECHNOLOGY"
+      }
+    ]
+  },
+  "trajectory_length": 8,
+  "switch_step": 4,
+  "primary_k": 10,
+  "session_budget_seconds": 300,
+  "final_budgets": [
+    5,
+    10,
+    25
+  ],
+  "tables": {
+    "100": {
+      "sha256": "e7db305f60637171272392a746650dd3e5fa4e8007d0df3de45adccac5c882fa",
+      "tail_threshold": 123.41879999999998
+    },
+    "101": {
+      "sha256": "6823142f11c68fadc051a7701f928436d7681ddf1054c024e0bc264584b1eacd",
+      "tail_threshold": 123.00579999999974
+    },
+    "102": {
+      "sha256": "a026c1adbd99ff17a3b6025318b95dce89dbda725b4740a9ae30e62079a3e2c5",
+      "tail_threshold": 123.79720000000009
+    },
+    "103": {
+      "sha256": "f1376e3ab8e0361ff92b41215bba2042d3037d141af56f75d1b5957042f18181",
+      "tail_threshold": 123.1646
+    },
+    "104": {
+      "sha256": "3ce462f89287d70dbaf08e24b020cbe22403aab6b8658051e0cade8d1bbdabbe",
+      "tail_threshold": 124.48749999999986
+    },
+    "105": {
+      "sha256": "157579157c3b94fddaab76a6b757d580c25305a9ee230527286bc966f034a509",
+      "tail_threshold": 123.65400000000001
+    },
+    "106": {
+      "sha256": "707ae9160bba83da2df9c0ebdab7027446f3f82d9a8719004afd824fa7dbe763",
+      "tail_threshold": 123.02080000000001
+    },
+    "107": {
+      "sha256": "b48b6c4770ca04338079c3efbdc1c3b86624183de71503608250ae9b0d35a230",
+      "tail_threshold": 122.39949999999997
+    },
+    "108": {
+      "sha256": "a9cc403595b5845a55cb362556c087060cd5b1821d647ce41aed844a84ae464c",
+      "tail_threshold": 122.87719999999958
+    },
+    "109": {
+      "sha256": "2335dc5886b5757a220b317b727cb06df70bc4d0c88e1b254bd1def1d153a4a1",
+      "tail_threshold": 123.40550000000002
+    }
+  },
+  "source_sha256": "6dd53c1093cffe18d042bde8c90b37f07bbced9f9c93a633a9ce2c475f2fab57",
+  "seconds": 5674.770321130753,
+  "failures": 0,
+  "python": "3.10.18 (main, Oct  7 2025, 15:51:21) [Clang 20.1.4 ]",
+  "numpy": "2.2.5",
+  "pandas": "2.2.3"
+}
