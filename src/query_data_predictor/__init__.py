@@ -1,7 +1,1 @@
-"""
-Query Data Predictor - A framework for predicting results of successive database queries.
-"""
-
-from query_data_predictor.cli import main
-
-__all__ = ['main']
+"""Destination-recovery benchmark and the MDI scorer used in the EDBT 2027 vision paper."""

@@ -1,46 +1,17 @@
-"""
-Recommender modules for predicting query results.
-"""
+"""Recommenders evaluated by the destination benchmark."""
 
 from .base_recommender import BaseRecommender
-from .dummy_recommender import DummyRecommender
 from .clustering_recommender import ClusteringRecommender
-from .random_recommender import RandomRecommender
-from .interestingness_recommender import InterestingnessRecommender
-from .similarity_recommender import SimilarityRecommender
 from .frequency_recommender import FrequencyRecommender
-from .sampling_recommender import SamplingRecommender
-from .hierarchical_recommender import HierarchicalRecommender
-from .index_recommender import IndexRecommender
-from .incremental_recommender import IncrementalRecommender
-from .embedding_recommender import EmbeddingRecommender
-from .query_expansion_recommender import QueryExpansionRecommender
-from .random_table_recommender import RandomTableRecommender
 from .multidimensional_interestingness_recommender import MultiDimensionalInterestingnessRecommender
-from .kernel_density_recommender import KernelDensityRecommender
-from .region_extractor import RegionExtractor, QueryRegion, AttributeBound
-from .interest_density import InterestDensity, KernelConfig
+from .random_recommender import RandomRecommender
+from .similarity_recommender import SimilarityRecommender
 
 __all__ = [
     'BaseRecommender',
-    'DummyRecommender',
     'ClusteringRecommender',
-    'RandomRecommender',
-    'InterestingnessRecommender',
-    'SimilarityRecommender',
     'FrequencyRecommender',
-    'SamplingRecommender',
-    'HierarchicalRecommender',
-    'IndexRecommender',
-    'IncrementalRecommender',
-    'EmbeddingRecommender',
-    'QueryExpansionRecommender',
-    'RandomTableRecommender',
     'MultiDimensionalInterestingnessRecommender',
-    'KernelDensityRecommender',
-    'RegionExtractor',
-    'QueryRegion',
-    'AttributeBound',
-    'InterestDensity',
-    'KernelConfig',
+    'RandomRecommender',
+    'SimilarityRecommender',
 ]

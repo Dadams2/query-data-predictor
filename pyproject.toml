@@ -1,42 +1,21 @@
 [project]
 name = "query-data-predictor"
-version = "0.1.0"
-description = "Query-sequence recommendation experiments for implicit exploratory data analysis"
+version = "0.2.0"
+description = "Destination-recovery benchmark and MDI scorer for anticipating analytical interest in exploratory data analysis"
 readme = "README.md"
 authors = [
     { name = "David Adams", email = "david@dadams2.com" }
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "click>=8.1.7",
-    "dash>=3.1.1",
-    "dotenv>=0.9.9",
-    "duckdb>=1.2.2",
     "joblib>=1.5.0",
-    "jupyter>=1.1.1",
     "matplotlib>=3.10.1",
     "mlxtend>=0.23.4",
-    "nbformat>=5.10.4",
-    "numexpr>=2.10.2",
     "numpy>=2.0.0",
     "pandas>=2.2.3",
-    "plotly>=6.2.0",
-    "polars>=1.29.0",
-    "psycopg2>=2.9.10",
-    "pyarrow>=20.0.0",
-    "pydantic>=2.7.0",
-    "pyyaml>=6.0.1",
     "scikit-learn>=1.6.1",
     "scipy>=1.7.0",
-    "seaborn>=0.13.2",
-    "sqlalchemy>=2.0.40",
-    "sqlparse>=0.5.3",
-    "tqdm>=4.67.1",
 ]
-
-[project.scripts]
-query-data-predictor = "query_data_predictor:main"
-synthetic-data-generator = "synthetic_data_generator:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -44,11 +23,5 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "ipykernel>=6.29.5",
-    "ipython>=8.36.0",
-    "mypy>=1.15.0",
     "pytest>=8.3.5",
-    "pytest-cov>=6.1.1",
-    "ruff>=0.11.8",
-    "scalene>=1.5.51",
 ]
