@@ -667,10 +667,13 @@ class MultiDimensionalInterestingnessRecommender(BaseRecommender):
     
     def _compute_novelty_component(self, original_df: pd.DataFrame) -> pd.Series:
         """
-        Compute novelty component: Novelty(t) = Σ(1 / log(1 + freq(a, value(t, a))))
+        Compute novelty component: Novelty(t) = Σ(1 / log(2 + freq(a, value(t, a))))
         
         Novelty measures the inverse frequency of attribute-value combinations,
         promoting discovery of rare but potentially significant data patterns.
+        The +2 keeps the score finite and monotone: an unseen value (freq 0)
+        scores highest. (The earlier 1/log(1 + freq), with 1.0 for unseen
+        values, ranked values seen once above unseen ones.)
         """
         scores = pd.Series(0.0, index=original_df.index)
         
@@ -683,12 +686,8 @@ class MultiDimensionalInterestingnessRecommender(BaseRecommender):
                 # Get frequency of this attribute-value combination
                 freq = self._attribute_value_frequencies[attr][value]
                 
-                # Compute inverse frequency (with log smoothing)
-                if freq > 0:
-                    novelty_score += 1.0 / np.log(1 + freq)
-                else:
-                    # New unseen combination - maximum novelty
-                    novelty_score += 1.0
+                # Inverse frequency with log smoothing; unseen values score highest.
+                novelty_score += 1.0 / np.log(2 + freq)
             
             scores[idx] = novelty_score
         
