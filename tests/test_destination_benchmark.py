@@ -1,9 +1,15 @@
 import pandas as pd
 import pytest
 
+import numpy as np
+
 from query_data_predictor.destination_benchmark import (
     CONDITIONS, CONTEXTS, KINDS, TRAJECTORY_LENGTH, SWITCH_STEP, PredicateMatch, Recurrence,
-    context_mask, earliness, extension_mask, make_model, make_session, make_table, precision_at_budget,
+    context_ceiling, context_mask, distinguishing_step, earliness, extension_mask, make_model, make_session,
+    make_table, precision_at_budget,
+)
+from query_data_predictor.recommender.multidimensional_interestingness_recommender import (
+    MultiDimensionalInterestingnessRecommender,
 )
 
 
@@ -24,8 +30,75 @@ def test_planted_destinations_are_stronger_in_context(kind):
         assert ext[~in_context].sum() == 0
         rate = ext[in_context].mean()
         assert rate > .15
-    # Contexts are disjoint, so extensions never overlap.
-    assert not (extension_mask(table, kind, 0, meta) & extension_mask(table, kind, 1, meta)).any()
+    overlap = extension_mask(table, kind, 0, meta) & extension_mask(table, kind, 1, meta)
+    if kind == 'shared':
+        # One context: extensions may overlap in the table; the panel uses exclusive rows.
+        assert CONTEXTS[kind][0] == CONTEXTS[kind][1]
+    else:
+        assert not overlap.any()
+
+
+@pytest.mark.parametrize('kind', KINDS)
+def test_panel_targets_are_disjoint_and_context_ceiling_is_known(kind):
+    session = make_session(999, kind, 'clear', 'holdout', 0)
+    _, meta = make_table(999)
+    e0, e1 = (extension_mask(session.panel, kind, d, meta) for d in (0, 1))
+    assert not (e0 & e1).any()
+    expected = .3 if kind == 'shared' else .6
+    assert context_ceiling(session.panel, kind, 0, meta) == pytest.approx(expected)
+
+
+def test_distinguishing_steps():
+    _, meta = make_table(999)
+    assert [distinguishing_step('structural', c, meta) for c in CONDITIONS] == [2, 6, 2, 5, None]
+    assert [distinguishing_step('shared', c, meta) for c in CONDITIONS] == [3, 7, 3, 6, None]
+
+
+def test_context_oracle_reaches_the_ceiling_and_no_further():
+    _, meta = make_table(999)
+    for kind in KINDS:
+        session = make_session(999, kind, 'clear', 'holdout', 0)
+        ext = set(session.panel.index[extension_mask(session.panel, kind, 0, meta)])
+        oracle = make_model('context_oracle', 999, session)
+        precisions = []
+        for probe in range(TRAJECTORY_LENGTH + 1):
+            if probe:
+                oracle.observe(session.results[probe - 1], session.queries[probe - 1])
+            precisions.append(precision_at_budget(oracle.rank(session.panel, 25), session.panel, ext, 25))
+        ceiling = context_ceiling(session.panel, kind, 0, meta)
+        # With k = 25 the in-context block is fully or nearly fully selected.
+        assert max(precisions) <= max(ceiling, 15 / 25) + 1e-9
+
+
+@pytest.mark.parametrize('method', ['competing_models', 'value_profile'])
+def test_history_baselines_are_deterministic_and_probes_do_not_mutate(method):
+    session = make_session(999, 'shared', 'clear', 'holdout', 0)
+    a, b = make_model(method, 999), make_model(method, 999)
+    for rows, query in zip(session.results[:4], session.queries[:4]):
+        a.observe(rows, query)
+        b.observe(rows, query)
+    first = list(a.rank(session.panel, 10).index)
+    assert first == list(a.rank(session.panel, 10).index) == list(b.rank(session.panel, 10).index)
+    assert len(a.results) == 4
+
+
+def test_history_baselines_follow_the_pattern_step_in_a_shared_context():
+    _, meta = make_table(999)
+    for target in (0, 1):
+        session = make_session(999, 'shared', 'clear', 'holdout', target)
+        ext = set(session.panel.index[extension_mask(session.panel, 'shared', target, meta)])
+        model = make_model('competing_models', 999)
+        for rows, query in zip(session.results, session.queries):
+            model.observe(rows, query)
+        assert precision_at_budget(model.rank(session.panel, 10), session.panel, ext, 10) > .3
+
+
+def test_novelty_is_monotone_in_frequency():
+    model = MultiDimensionalInterestingnessRecommender({'random': {'random_seed': 0}})
+    frame = pd.DataFrame({'a': ['new', 'once', 'twice']})
+    model._attribute_value_frequencies = {'a': {'new': 0, 'once': 1, 'twice': 2}}
+    scores = model._compute_novelty_component(frame)
+    assert scores.is_monotonic_decreasing and np.isfinite(scores).all()
 
 
 @pytest.mark.parametrize('kind', KINDS)
@@ -105,3 +178,29 @@ def test_earliness_requires_staying_above_threshold():
     assert earliness([0, 0, .5, .5, .5, .5, .5, .5, .5], .3) == 2
     assert earliness([0, .5, 0, .5, .5, .5, .5, .5, .5], .3) == 3
     assert earliness([.5] * 8 + [0], .3) == TRAJECTORY_LENGTH + 1
+
+
+def test_pattern_earliness_and_lag_in_summary(tmp_path):
+    from query_data_predictor.destination_benchmark import summarize
+    rows = []
+    for seed in (1, 2):
+        for target in (0, 1):
+            for method, values in (('mdi', [.1, .1, .5, .9, .9, .9, .9, .9, .9]),
+                                   ('random', [.1] * 9)):
+                for probe, value in enumerate(values):
+                    rows.append(dict(seed=seed, kind='structural', condition='clear', exposure='holdout',
+                                     target=target, active=target, method=method, probe=probe, k=10,
+                                     error=None, seconds=0., selected_ids=[], precision=value,
+                                     other_precision=0., chance=.15, context_ceiling=.6,
+                                     distinguishing_step=2))
+    import query_data_predictor.destination_benchmark as db
+    original = (db.write_tables, db.write_figure, db.write_paper_artifacts)
+    db.write_tables = db.write_figure = db.write_paper_artifacts = lambda *a, **k: None
+    try:
+        summarize(tmp_path, rows)
+    finally:
+        db.write_tables, db.write_figure, db.write_paper_artifacts = original
+    early = pd.read_csv(tmp_path / 'earliness.csv').set_index('method')
+    assert early.loc['mdi', 'earliness'] == 2 and early.loc['mdi', 'lag'] == 0
+    assert early.loc['mdi', 'pattern_earliness'] == 3 and early.loc['mdi', 'pattern_lag'] == 1
+    assert early.loc['random', 'pattern_qualified'] == 0
