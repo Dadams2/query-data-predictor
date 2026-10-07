@@ -1,0 +1,72 @@
+output:
+  save_predictions: true
+  output_directory: results/analytical_interest_discovery
+
+query_runner:
+  dbname: sdss
+  statement_timeout_seconds: 120
+
+experiment:
+  name: analytical_interest_discovery
+  dataset: sdss
+  sessions: [12050]
+  prediction_gap: [1, 2, 3, 5, 10]
+  mode: normal
+  include_query_text: true
+  recommenders:
+    - multidimensional_interestingness
+    - temporal_interest
+    - exploratory_interest
+    - query_expansion
+
+temporal_interest:
+  decay: 0.1
+  recurrence_weight: 0.5
+  history_window: 10
+
+exploratory_interest:
+  max_candidates: 1000
+
+query_expansion:
+  enable_range_expansion: false
+  enable_constraint_relaxation: true
+  enable_join_exploration: false
+  enable_column_expansion: false
+  enable_similarity_search: false
+  allow_predicate_removal: true
+  min_confidence_threshold: 0.3
+  budget:
+    max_queries: 5
+    max_execution_time: 30.0
+    max_results_per_query: 1000
+
+multidimensional_interestingness:
+  alpha: 0.5
+  beta: 0.3
+  gamma: 0.2
+  rule_decay_rate: 0.05
+  summary_decay_rate: 0.1
+
+association_rules:
+  enabled: true
+  min_support: 0.08
+  min_threshold: 0.1
+  metric: confidence
+  max_rules: 500
+
+summaries:
+  enabled: true
+  desired_size: 10
+
+discretization:
+  enabled: false
+
+recommendation:
+  mode: top_k
+  top_k: 25
+
+evaluation:
+  metrics: [precision, recall, f1, overlap]
+  identity_columns: [objid]
+  window_sizes: [5, 10, 20]
+

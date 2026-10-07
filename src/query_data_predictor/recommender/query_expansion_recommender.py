@@ -118,6 +118,8 @@ class QueryExpansionRecommender(BaseRecommender):
         self.range_expansion_factor = expansion_config.get('range_expansion_factor', 0.2)  # 20% expansion
         self.min_confidence_threshold = expansion_config.get('min_confidence_threshold', 0.3)
         self.max_query_complexity = expansion_config.get('max_query_complexity', 5)
+        self.allow_predicate_removal = expansion_config.get('allow_predicate_removal', False)
+        self.last_candidates = pd.DataFrame()
         
         # SDSS-specific knowledge
         self.sdss_tables = {
@@ -148,8 +150,6 @@ class QueryExpansionRecommender(BaseRecommender):
             DataFrame with recommended tuples from database queries
         """
         self._validate_input(current_results)
-        current_query_text = kwargs.get('current_query_text', None)
-        future_query_text = kwargs.get('future_query_text', None)
 
         if current_results.empty:
             return pd.DataFrame()
@@ -177,6 +177,7 @@ class QueryExpansionRecommender(BaseRecommender):
                 current_results, expansion_results, analysis
             )
             
+            self.last_candidates = final_recommendations.copy()
             # Apply output limiting
             return self._limit_output(final_recommendations, top_k=top_k)
             
@@ -671,10 +672,6 @@ class QueryExpansionRecommender(BaseRecommender):
         completeness_scores = 1.0 - (null_counts / len(expansion_results.columns))
         scores = scores * completeness_scores
         
-        # Add some randomness to ensure diversity
-        random_factor = np.random.random(len(expansion_results)) * 0.1
-        scores = scores + random_factor
-        
         # Sort by score
         expansion_results_copy = expansion_results.copy()
         expansion_results_copy['_rank_score'] = scores
@@ -750,6 +747,10 @@ class QueryExpansionRecommender(BaseRecommender):
             
             return relaxed_query
         
+        # Bounded fallback for predicates that cannot be widened numerically.
+        if self.allow_predicate_removal:
+            return query.replace(condition, 'TRUE', 1)
+
         # For equality conditions, remove them entirely (risky, so we return None)
         return None
     

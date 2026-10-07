@@ -141,7 +141,15 @@ class ResultsAnalyzer:
                         'precision': metrics['precision'],
                         'recall': metrics['recall'],
                         'f1_score': metrics['f1'],
-                        'overlap': overlap
+                        'overlap': overlap,
+                        'ndcg': rec.get('ndcg', 0.0),
+                        'candidate_count': rec.get('candidate_count', 0),
+                        'candidate_recall': rec.get('candidate_recall', 0.0),
+                        'novel_candidate_recall': rec.get('novel_candidate_recall', 0.0),
+                        'novel_precision': rec.get('novel_precision', 0.0),
+                        'novel_recall': rec.get('novel_recall', 0.0),
+                        'novel_f1': rec.get('novel_f1', 0.0),
+                        'novel_count': rec.get('novel_count', 0),
                     }
                     scenario_metrics[scenario]['per_query_rows'].append(row)
 
@@ -599,6 +607,23 @@ class ResultsAnalyzer:
             scenario: 'raw', 'close', or 'similarity'
             base_jaccard: Jaccard threshold for similarity scenario
         """
+        if scenario == 'raw':
+            evaluation = self.config.get('evaluation', {})
+            metric = EvaluationMetrics(
+                jaccard_threshold=base_jaccard,
+                column_weights=evaluation.get('column_weights'),
+                identity_columns=evaluation.get('identity_columns'),
+            )
+            predicted_df, actual_df = pd.DataFrame(predicted), pd.DataFrame(actual)
+            precision = metric.precision(predicted_df, actual_df)
+            recall = metric.recall(predicted_df, actual_df)
+            return {
+                'accuracy': recall,
+                'precision': precision,
+                'recall': recall,
+                'f1': 2 * precision * recall / (precision + recall) if precision + recall else 0.0,
+            }
+
         # Handle empty cases
         if not actual and not predicted:
             return {'accuracy': 1.0, 'precision': 1.0, 'recall': 1.0, 'f1': 1.0}
@@ -661,18 +686,14 @@ class ResultsAnalyzer:
             return 0.0
         
         if scenario == 'raw':
-            # Build hash sets for O(1) membership testing
-            def _row_key(rec):
-                return frozenset((str(k), str(v)) for k, v in rec.items())
-            
-            current_set = set(_row_key(r) for r in current)
-            actual_set = set(_row_key(r) for r in actual)
-            
-            matched_count = 0
-            for p in predicted:
-                p_key = _row_key(p)
-                if p_key in current_set and p_key in actual_set:
-                    matched_count += 1
+            evaluation = self.config.get('evaluation', {})
+            metric = EvaluationMetrics(identity_columns=evaluation.get('identity_columns'))
+            frames = [pd.DataFrame(predicted), pd.DataFrame(current), pd.DataFrame(actual)]
+            columns = metric._shared_identity_columns(*frames)
+            predicted_set, current_set, actual_set = (
+                metric._dataframe_to_tuple_set(frame, columns) for frame in frames
+            )
+            matched_count = len(predicted_set & current_set & actual_set)
         else:
             # For close/similarity: check each predicted against current AND actual.
             # O(|predicted| * (|current| + |actual|)) instead of O(|current| * |actual|)
@@ -1066,6 +1087,14 @@ class ResultsAnalyzer:
                     'intersection_count': intersection_count,
                     'union_count': union_count,
                     'execution_time': execution_time,
+                    'ndcg': rec.get('ndcg', 0.0),
+                    'candidate_count': rec.get('candidate_count', 0),
+                    'candidate_recall': rec.get('candidate_recall', 0.0),
+                    'novel_candidate_recall': rec.get('novel_candidate_recall', 0.0),
+                    'novel_precision': rec.get('novel_precision', 0.0),
+                    'novel_recall': rec.get('novel_recall', 0.0),
+                    'novel_f1': rec.get('novel_f1', 0.0),
+                    'novel_count': rec.get('novel_count', 0),
                     'error_message': rec.get('error_message', ''),
                     'has_error': bool(rec.get('error_message', '')),
                 }
@@ -1796,4 +1825,3 @@ class ResultsAnalyzer:
                 ]
             }
         }
-    

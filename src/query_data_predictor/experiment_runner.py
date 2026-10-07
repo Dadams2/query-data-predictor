@@ -25,10 +25,13 @@ from query_data_predictor.recommender import (
     QueryExpansionRecommender,
     RandomTableRecommender,
     SimilarityRecommender,
+    OutOfResultSimilarityRecommender,
     FrequencyRecommender,
     SamplingRecommender,
     MultiDimensionalInterestingnessRecommender,
     KernelDensityRecommender,
+    TemporalInterestRecommender,
+    ExploratoryInterestRecommender,
 )
 from query_data_predictor.query_runner import QueryRunner
 
@@ -62,7 +65,12 @@ class ExperimentRunner:
             Path("queries") / self.dataset / "queries.csv",
             self.query_runner,
         )
-        self.metrics = EvaluationMetrics(config['evaluation'])
+        evaluation = config.get('evaluation', {})
+        self.metrics = EvaluationMetrics(
+            jaccard_threshold=evaluation.get('jaccard_threshold', 0.5),
+            column_weights=evaluation.get('column_weights'),
+            identity_columns=evaluation.get('identity_columns'),
+        )
         self.recommenders = self._initialize_recommenders()
         logger.info(f"Initialized ExperimentRunner with config: {self.config}")
 
@@ -184,6 +192,14 @@ class ExperimentRunner:
             "execution_time": None,
             "timestamp": None,
             "error_message": None,
+            "candidate_count": 0,
+            "candidate_recall": 0.0,
+            "novel_candidate_recall": 0.0,
+            "novel_precision": 0.0,
+            "novel_recall": 0.0,
+            "novel_f1": 0.0,
+            "novel_count": 0,
+            "ndcg": 0.0,
         }
         # if reccomendation mode is cheating set topk to be length of future results otherwise let reccomenders determine   
         top_k = len(future_results) if self.config.get('experiment', {}).get('mode', '') == 'cheating' else None
@@ -193,9 +209,31 @@ class ExperimentRunner:
             with self._timeout(timeout_seconds):
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    recommended_results = recommender.recommend_tuples(current_results, top_k=top_k, current_query_text=current_query_text, future_query_text=future_query_text)
+                    recommended_results = recommender.recommend_tuples(
+                        current_results,
+                        top_k=top_k,
+                        current_query_text=current_query_text,
+                        current_query=current_query_text,
+                        prediction_gap=gap,
+                    )
             execution_time = time.time() - start_time
             result_record["recommended_results"] = recommended_results.to_dict("records") if isinstance(recommended_results, pd.DataFrame) else recommended_results
+            if isinstance(recommended_results, pd.DataFrame):
+                candidates = getattr(recommender, "last_candidates", current_results)
+                if not isinstance(candidates, pd.DataFrame):
+                    candidates = current_results
+                novel = self.metrics.novel_metrics(recommended_results, current_results, future_results)
+                candidate_novel = self.metrics.novel_metrics(candidates, current_results, future_results)
+                result_record.update({
+                    "candidate_count": len(candidates.drop_duplicates()),
+                    "candidate_recall": self.metrics.recall(candidates, future_results),
+                    "novel_candidate_recall": candidate_novel["recall"],
+                    "novel_precision": novel["precision"],
+                    "novel_recall": novel["recall"],
+                    "novel_f1": novel["f1"],
+                    "novel_count": novel["count"],
+                    "ndcg": self.metrics.ndcg_at_k(recommended_results, future_results, len(recommended_results)),
+                })
             result_record["execution_time"] = execution_time
             result_record["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S")
         except Exception as e:
@@ -221,12 +259,15 @@ class ExperimentRunner:
             'clustering': ClusteringRecommender,
             'interestingness': InterestingnessRecommender,
             'similarity': SimilarityRecommender,
+            'out_of_result_similarity': OutOfResultSimilarityRecommender,
             'frequency': FrequencyRecommender,
             'sampling': SamplingRecommender,
             'query_expansion': QueryExpansionRecommender,
             'random_table_baseline': RandomTableRecommender,
             'multidimensional_interestingness': MultiDimensionalInterestingnessRecommender,
             'kernel_density': KernelDensityRecommender,
+            'temporal_interest': TemporalInterestRecommender,
+            'exploratory_interest': ExploratoryInterestRecommender,
         }
         
         # Get the list of recommenders from config
@@ -240,7 +281,7 @@ class ExperimentRunner:
                     recommender_class = available_recommenders[name]
                     
                     # Handle recommenders that need special initialization (QueryRunner)
-                    if name in ['query_expansion', 'random_table_baseline', 'kernel_density']:
+                    if name in ['query_expansion', 'random_table_baseline', 'kernel_density', 'exploratory_interest', 'out_of_result_similarity']:
                         recommender = recommender_class(self.config, query_runner=self.query_runner)
                     else:
                         recommender = recommender_class(self.config)

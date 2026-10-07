@@ -66,6 +66,7 @@ class EvaluationConfig(BaseModel):
     metrics: List[str] = ["accuracy", "overlap", "jaccard", "precision", "recall", "f1"]
     jaccard_threshold: float = Field(0.5, ge=0.0, le=1.0)
     column_weights: Optional[Dict[str, float]] = None
+    identity_columns: Optional[List[str]] = None
     
     @field_validator("metrics")
     def validate_metrics(cls, v):

@@ -8,6 +8,7 @@ from .clustering_recommender import ClusteringRecommender
 from .random_recommender import RandomRecommender
 from .interestingness_recommender import InterestingnessRecommender
 from .similarity_recommender import SimilarityRecommender
+from .out_of_result_similarity_recommender import OutOfResultSimilarityRecommender
 from .frequency_recommender import FrequencyRecommender
 from .sampling_recommender import SamplingRecommender
 from .hierarchical_recommender import HierarchicalRecommender
@@ -18,6 +19,7 @@ from .query_expansion_recommender import QueryExpansionRecommender
 from .random_table_recommender import RandomTableRecommender
 from .multidimensional_interestingness_recommender import MultiDimensionalInterestingnessRecommender
 from .kernel_density_recommender import KernelDensityRecommender
+from .temporal_interest_recommender import TemporalInterestRecommender, ExploratoryInterestRecommender
 from .region_extractor import RegionExtractor, QueryRegion, AttributeBound
 from .interest_density import InterestDensity, KernelConfig
 
@@ -28,6 +30,7 @@ __all__ = [
     'RandomRecommender',
     'InterestingnessRecommender',
     'SimilarityRecommender',
+    'OutOfResultSimilarityRecommender',
     'FrequencyRecommender',
     'SamplingRecommender',
     'HierarchicalRecommender',
@@ -38,6 +41,8 @@ __all__ = [
     'RandomTableRecommender',
     'MultiDimensionalInterestingnessRecommender',
     'KernelDensityRecommender',
+    'TemporalInterestRecommender',
+    'ExploratoryInterestRecommender',
     'RegionExtractor',
     'QueryRegion',
     'AttributeBound',

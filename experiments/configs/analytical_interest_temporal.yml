@@ -1,0 +1,49 @@
+output:
+  save_predictions: true
+  output_directory: results/analytical_interest_temporal
+
+query_runner:
+  dbname: benchmark_mdi
+
+experiment:
+  name: analytical_interest_temporal
+  dataset: benchmark_mdi
+  sessions: [benchmark_s1, benchmark_s2, benchmark_s3]
+  prediction_gap: [1, 2, 3, 5, 10]
+  mode: normal
+  recommenders: [multidimensional_interestingness, temporal_interest]
+
+temporal_interest:
+  decay: 0.1
+  recurrence_weight: 0.5
+  history_window: 10
+
+multidimensional_interestingness:
+  alpha: 0.5
+  beta: 0.3
+  gamma: 0.2
+  rule_decay_rate: 0.05
+  summary_decay_rate: 0.1
+
+association_rules:
+  enabled: true
+  min_support: 0.08
+  min_threshold: 0.1
+  metric: confidence
+  max_rules: 500
+
+summaries:
+  enabled: true
+  desired_size: 10
+
+discretization:
+  enabled: false
+
+recommendation:
+  mode: top_k
+  top_k: 25
+
+evaluation:
+  metrics: [precision, recall, f1, overlap]
+  window_sizes: [5, 10, 20]
+

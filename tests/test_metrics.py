@@ -14,6 +14,23 @@ class TestMetrics:
     def metrics(self):
         """Fixture for EvaluationMetrics instance."""
         return EvaluationMetrics(jaccard_threshold=0.5)
+
+    def test_identity_and_novel_metrics_across_projections(self):
+        metrics = EvaluationMetrics(identity_columns=["objid"])
+        current = pd.DataFrame({"objID": [1, 2], "old": [10, 20]})
+        future = pd.DataFrame({"objid": [2, 3], "new": [200, 300]})
+        predicted = pd.DataFrame({"OBJID": [3, 2], "old": [30, 20]})
+
+        assert metrics.precision(predicted, future) == 1.0
+        assert metrics.recall(predicted, future) == 1.0
+        assert metrics.ndcg_at_k(predicted, future, 2) == 1.0
+        assert metrics.novel_metrics(predicted, current, future) == {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "count": 1,
+        }
+        assert metrics.novel_metrics(pd.DataFrame(), current, future)["recall"] == 0.0
     
     @pytest.fixture
     def identical_dfs(self):
@@ -129,5 +146,3 @@ class TestMetrics:
 
         # Predicted does not match the overlap
         assert metrics.overlap_accuracy(previous, actual, predicted_none) == 0.0
-
-

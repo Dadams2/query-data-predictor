@@ -104,3 +104,23 @@ def test_writes_workload_query_errors(tmp_path):
     contents = (tmp_path / "query_errors.json").read_text()
     assert "SELECT broken" in contents
     assert "database error" in contents
+
+
+def test_get_results_does_not_pass_future_query_to_recommender(tmp_path):
+    runner = ExperimentRunner.__new__(ExperimentRunner)
+    runner.config = {"experiment": {"mode": "normal"}}
+    runner.metrics = __import__(
+        "query_data_predictor.metrics", fromlist=["EvaluationMetrics"]
+    ).EvaluationMetrics()
+    recommender = MagicMock()
+    recommender.recommend_tuples.return_value = pd.DataFrame({"a": [1]})
+    current = pd.DataFrame({"a": [1]})
+
+    runner.get_results(
+        "s", 0, 1, current, current, "SELECT current", "SELECT future",
+        "mock", recommender, 1,
+    )
+
+    kwargs = recommender.recommend_tuples.call_args.kwargs
+    assert kwargs["current_query_text"] == "SELECT current"
+    assert "future_query_text" not in kwargs

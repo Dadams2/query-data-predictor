@@ -5,7 +5,6 @@ import tempfile
 from pathlib import Path
 
 import pandas as pd
-import psycopg2
 
 
 logger = logging.getLogger(__name__)
@@ -42,6 +41,8 @@ class QueryRunner:
 
     def connect(self):
         """Connect lazily to PostgreSQL for cache misses."""
+        import psycopg2
+
         if self.conn is not None and not self.conn.closed:
             return
 

@@ -12,7 +12,8 @@ class EvaluationMetrics:
     Class for computing evaluation metrics between predicted and actual query results.
     """
     
-    def __init__(self, jaccard_threshold: float = 0.5, column_weights: Optional[Dict[str, float]] = None):
+    def __init__(self, jaccard_threshold: float = 0.5, column_weights: Optional[Dict[str, float]] = None,
+                 identity_columns: Optional[List[str]] = None):
         """
         Initialize the metrics class.
         
@@ -22,6 +23,7 @@ class EvaluationMetrics:
         """
         self.jaccard_threshold = jaccard_threshold
         self.column_weights = column_weights
+        self.identity_columns = [column.lower() for column in (identity_columns or [])]
     
     def accuracy(self, predicted: pd.DataFrame, actual: pd.DataFrame) -> float:
         """
@@ -44,8 +46,7 @@ class EvaluationMetrics:
             return 0.0
         
         # Convert DataFrames to sets of tuple representations
-        actual_tuples = self._dataframe_to_tuple_set(actual)
-        pred_tuples = self._dataframe_to_tuple_set(predicted)
+        pred_tuples, actual_tuples = self._matching_tuple_sets(predicted, actual)
         
         # Count exact matches
         matches = actual_tuples.intersection(pred_tuples)
@@ -97,8 +98,7 @@ class EvaluationMetrics:
             return 0.0
         
         # Convert DataFrames to sets of tuple representations
-        actual_tuples = self._dataframe_to_tuple_set(actual)
-        pred_tuples = self._dataframe_to_tuple_set(predicted)
+        pred_tuples, actual_tuples = self._matching_tuple_sets(predicted, actual)
         
         # Calculate Jaccard similarity: |A ∩ B| / |A ∪ B|
         intersection = len(actual_tuples.intersection(pred_tuples))
@@ -124,8 +124,7 @@ class EvaluationMetrics:
             return 0.0
         
         # Convert DataFrames to sets of tuple representations
-        actual_tuples = self._dataframe_to_tuple_set(actual)
-        pred_tuples = self._dataframe_to_tuple_set(predicted)
+        pred_tuples, actual_tuples = self._matching_tuple_sets(predicted, actual)
         
         # Count exact matches
         matches = actual_tuples.intersection(pred_tuples)
@@ -256,6 +255,35 @@ Returns:
             return 0.0
         
         return 2 * (precision_val * recall_val) / (precision_val + recall_val)
+
+    def ndcg_at_k(self, predicted: pd.DataFrame, actual: pd.DataFrame, k: int) -> float:
+        """Binary nDCG for the ranked prediction under the configured tuple identity."""
+        if k <= 0 or predicted.empty or actual.empty:
+            return 0.0
+        columns = self._shared_identity_columns(predicted, actual)
+        actual_set = self._dataframe_to_tuple_set(actual, columns)
+        predicted_keys = list(self._dataframe_to_tuple_keys(predicted.head(k), columns))
+        gains = np.array([1.0 if key in actual_set else 0.0 for key in predicted_keys])
+        discounts = np.log2(np.arange(2, len(gains) + 2))
+        dcg = float(np.sum(gains / discounts))
+        ideal_hits = min(len(actual_set), k)
+        idcg = float(np.sum(np.ones(ideal_hits) / np.log2(np.arange(2, ideal_hits + 2))))
+        return dcg / idcg if idcg else 0.0
+
+    def novel_metrics(self, predicted: pd.DataFrame, current: pd.DataFrame,
+                      actual: pd.DataFrame) -> Dict[str, float]:
+        """Precision/recall/F1 restricted to tuples absent from the current result."""
+        columns = self._shared_identity_columns(predicted, current, actual)
+        predicted_set = self._dataframe_to_tuple_set(predicted, columns)
+        current_set = self._dataframe_to_tuple_set(current, columns)
+        actual_set = self._dataframe_to_tuple_set(actual, columns)
+        predicted_novel = predicted_set - current_set
+        actual_novel = actual_set - current_set
+        hits = predicted_novel & actual_novel
+        precision = len(hits) / len(predicted_novel) if predicted_novel else 0.0
+        recall = len(hits) / len(actual_novel) if actual_novel else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        return {"precision": precision, "recall": recall, "f1": f1, "count": len(actual_novel)}
     
     def jaccard_precision_recall(self, predicted: pd.DataFrame, actual: pd.DataFrame) -> Dict[str, float]:
         """
@@ -362,7 +390,37 @@ Returns:
         
         return metrics
     
-    def _dataframe_to_tuple_set(self, df: pd.DataFrame) -> Set[Tuple]:
+    def _shared_identity_columns(self, *frames: pd.DataFrame) -> Optional[List[str]]:
+        nonempty = [frame for frame in frames if not frame.empty]
+        if not self.identity_columns:
+            return None
+        for frame in nonempty:
+            columns = {column.lower(): column for column in frame.columns}
+            if any(wanted not in columns or not frame[columns[wanted]].notna().any()
+                   for wanted in self.identity_columns):
+                return None
+        return self.identity_columns
+
+    @staticmethod
+    def _normalise_value(value):
+        return None if pd.isna(value) else value
+
+    def _dataframe_to_tuple_keys(self, df: pd.DataFrame,
+                                 identity_columns: Optional[List[str]] = None):
+        if df.empty:
+            return
+        if identity_columns:
+            resolved = [next(column for column in df.columns if column.lower() == wanted)
+                        for wanted in identity_columns]
+            for row in df[resolved].itertuples(index=False, name=None):
+                yield tuple(self._normalise_value(value) for value in row)
+            return
+        columns = sorted(df.columns, key=str.lower)
+        for row in df[columns].itertuples(index=False, name=None):
+            yield tuple((column.lower(), self._normalise_value(value)) for column, value in zip(columns, row))
+
+    def _dataframe_to_tuple_set(self, df: pd.DataFrame,
+                                identity_columns: Optional[List[str]] = None) -> Set[Tuple]:
         """
         Convert a DataFrame to a set of tuples for comparison.
         
@@ -372,8 +430,11 @@ Returns:
         Returns:
             Set of tuples representing the DataFrame rows
         """
-        # Convert each row to a tuple of values
-        return {tuple(row) for row in df.itertuples(index=False, name=None)}
+        return set(self._dataframe_to_tuple_keys(df, identity_columns))
+
+    def _matching_tuple_sets(self, first: pd.DataFrame, second: pd.DataFrame):
+        columns = self._shared_identity_columns(first, second)
+        return self._dataframe_to_tuple_set(first, columns), self._dataframe_to_tuple_set(second, columns)
     
     def _tuple_similarity(self, tuple1: Dict[str, Any], tuple2: Dict[str, Any]) -> float:
         """
@@ -438,8 +499,7 @@ Returns:
         if future_accessed.empty:
             return 0.0
 
-        rec_set = self._dataframe_to_tuple_set(recommended)
-        future_set = self._dataframe_to_tuple_set(future_accessed)
+        rec_set, future_set = self._matching_tuple_sets(recommended, future_accessed)
         hits = rec_set.intersection(future_set)
         return len(hits) / len(rec_set)
 
@@ -458,8 +518,7 @@ Returns:
         if recommended.empty:
             return 0.0
 
-        rec_set = self._dataframe_to_tuple_set(recommended)
-        future_set = self._dataframe_to_tuple_set(future_accessed)
+        rec_set, future_set = self._matching_tuple_sets(recommended, future_accessed)
         hits = rec_set.intersection(future_set)
         return len(hits) / len(future_set)
 
