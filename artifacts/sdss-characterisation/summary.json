@@ -1,0 +1,101 @@
+{
+  "sessions": 462,
+  "queries": 160394,
+  "transitions": 159932,
+  "session_length": {
+    "median": 34.0,
+    "p25": 8.0,
+    "p75": 135.25,
+    "max": 5459
+  },
+  "share_select": 1.0,
+  "share_id_lookup": 0.6700001246929437,
+  "share_single_row": 0.5533249373417958,
+  "share_lookup_or_single_row": 0.7003129792885021,
+  "distinct_templates": 104,
+  "template_sessions_threshold": 5,
+  "share_templated": 0.9972816938289463,
+  "share_refinement_transitions": 0.12549083360428182,
+  "chain_threshold": 3,
+  "sessions_with_chain": 186,
+  "share_sessions_with_chain": 0.4025974025974026,
+  "queries_in_chain_sessions": 60911,
+  "share_strict_transitions": 0.00020008503614035966,
+  "sessions_with_strict_chain": 0,
+  "share_sessions_with_strict_chain": 0.0,
+  "sessions_with_strict_chain_2": 0,
+  "sessions_with_any_strict_step": 19,
+  "median_templates_per_session": 2.0,
+  "longest_strict_chain_distribution": [
+    [
+      0,
+      443
+    ],
+    [
+      1,
+      19
+    ]
+  ],
+  "longest_chain_distribution": [
+    [
+      0,
+      135
+    ],
+    [
+      1,
+      83
+    ],
+    [
+      3,
+      64
+    ],
+    [
+      2,
+      58
+    ],
+    [
+      4,
+      34
+    ],
+    [
+      5,
+      31
+    ],
+    [
+      6,
+      21
+    ],
+    [
+      7,
+      14
+    ],
+    [
+      8,
+      9
+    ],
+    [
+      9,
+      4
+    ],
+    [
+      11,
+      3
+    ],
+    [
+      10,
+      3
+    ],
+    [
+      66,
+      1
+    ],
+    [
+      16,
+      1
+    ],
+    [
+      13,
+      1
+    ]
+  ]
+}
