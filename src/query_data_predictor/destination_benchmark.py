@@ -1,7 +1,9 @@
 """Destination-recovery benchmark: can a scorer anticipate where a trajectory is heading?
 
 A fixed table contains planted destinations of three kinds (structural,
-distributional, compositional). Each trajectory is a sequence of selection
+distributional, compositional), plus a shared-context pair in which a
+structural and a distributional destination live in the same context, so that
+recognising the context does not identify the destination. Each trajectory is a sequence of selection
 queries over that table that gradually reveals one destination. After every
 step, a copy of each model scores a shared evaluation result; the target is
 the extension of the active destination within that result. Probes never enter
@@ -57,7 +59,12 @@ CONTEXTS = {
                        {'region': 'EUROPE', 'category': 'RETAIL'}),
     'compositional': ({'region': 'AMERICA', 'category': 'AUTOMOTIVE'},
                       {'region': 'AMERICA', 'category': 'TECHNOLOGY'}),
+    # Both destinations share one context: 0 is structural (URGENT raised), 1 is
+    # distributional (heavy price tail). Only the pattern step distinguishes them.
+    'shared': ({'region': 'MIDDLE_EAST', 'category': 'FINANCE'},
+               {'region': 'MIDDLE_EAST', 'category': 'FINANCE'}),
 }
+SHARED_PATTERNS = ('structural', 'distributional')  # pattern of each shared destination
 KINDS = tuple(CONTEXTS)
 CONDITIONS = ('clear', 'ambiguous', 'detour', 'switch', 'null')
 EXPOSURES = ('holdout', 'exposed')
@@ -81,6 +88,10 @@ class BenchmarkConfig:
     tail_multiplier: float = 4.
     tail_quantile: float = .99
     compositional_confidence: float = .9
+    # Shared context: weaker planting so that the exclusive extensions
+    # (urgent but not tail, tail but not urgent) both have enough rows.
+    shared_urgent_fraction: float = .45
+    shared_tail_fraction: float = .3
     query_limit: int = 200
     panel_extension: int = 15     # per destination
     panel_context_other: int = 10  # per destination: in context, not in extension
@@ -110,8 +121,9 @@ MDI_CONFIG['discretization']['method'] = 'equal_freq'
 MDI_CONFIG['multidimensional_interestingness'].update(
     alpha=.4, beta=.4, gamma=.2, delta_weight=0., delta_decay_rate=.1,
     normalize_components=True, diversity_mode='attribute', narrowing_margin=.05)
-METHODS = ('mdi', 'mdi_original', 'association_only', 'mdi_with_delta', 'delta_only', 'mdi_reset',
-           'mdi_decay0', 'mdi_decay020', 'recurrence', 'predicate_match', 'frequency', 'similarity', 'clustering', 'random')
+METHODS = ('mdi', 'mdi_original', 'association_only', 'mdi_no_novelty', 'mdi_with_delta', 'delta_only', 'mdi_reset',
+           'mdi_decay0', 'mdi_decay020', 'competing_models', 'value_profile', 'context_oracle', 'recurrence',
+           'predicate_match', 'frequency', 'similarity', 'clustering', 'random')
 
 
 # --------------------------------------------------------------------------- table
@@ -133,6 +145,13 @@ def make_table(seed: int, config: BenchmarkConfig = CONFIG) -> tuple[pd.DataFram
             elif kind == 'distributional':
                 tail = rng.random(len(idx)) < config.tail_fraction
                 table.loc[idx[tail], NUMERIC] = np.round(table.loc[idx[tail], NUMERIC] * config.tail_multiplier, 2)
+            elif kind == 'shared':
+                if context is contexts[1]:
+                    continue  # one context, planted once
+                urgent = rng.random(len(idx)) < config.shared_urgent_fraction
+                table.loc[idx[urgent], 'priority'] = 'URGENT'
+                tail = rng.random(len(idx)) < config.shared_tail_fraction
+                table.loc[idx[tail], NUMERIC] = np.round(table.loc[idx[tail], NUMERIC] * config.tail_multiplier, 2)
             else:
                 modes = table.loc[idx, 'ship_mode']
                 conform = rng.random(len(idx)) < config.compositional_confidence
@@ -140,7 +159,8 @@ def make_table(seed: int, config: BenchmarkConfig = CONFIG) -> tuple[pd.DataFram
                     chosen = idx[(modes == mode).to_numpy() & conform]
                     table.loc[chosen, 'priority'] = priority
 
-    untouched = ~np.logical_or.reduce([context_mask(table, c) for c in CONTEXTS['distributional']])
+    untouched = ~np.logical_or.reduce([context_mask(table, c)
+                                       for c in CONTEXTS['distributional'] + CONTEXTS['shared'][:1]])
     threshold = float(table.loc[untouched, NUMERIC].quantile(config.tail_quantile))
     return table, {'tail_threshold': threshold}
 
@@ -152,6 +172,8 @@ def context_mask(frame: pd.DataFrame, context: dict) -> pd.Series:
 def extension_mask(frame: pd.DataFrame, kind: str, destination: int, meta: dict) -> pd.Series:
     """Rows that instantiate a destination, defined from observable values only."""
     in_context = context_mask(frame, CONTEXTS[kind][destination])
+    if kind == 'shared':
+        kind = SHARED_PATTERNS[destination]
     if kind == 'structural':
         return in_context & frame.priority.eq('URGENT')
     if kind == 'distributional':
@@ -164,17 +186,28 @@ def extension_mask(frame: pd.DataFrame, kind: str, destination: int, meta: dict)
 
 def make_panel(table: pd.DataFrame, meta: dict, kind: str, seed: int,
                config: BenchmarkConfig = CONFIG) -> pd.DataFrame:
-    """The shared evaluation result: identical for both destinations of a kind."""
+    """The shared evaluation result: identical for both destinations of a kind.
+
+    Extension rows are drawn from each destination's exclusive extension and
+    in-context rows from neither extension, so the two targets are disjoint
+    even when the destinations share a context.
+    """
     rng = np.random.default_rng([seed, KINDS.index(kind), 7])
     parts = []
+    chosen = pd.Index([], dtype=np.int64)
     either = pd.Series(False, index=table.index)
+    exts = [extension_mask(table, kind, d, meta) for d in (0, 1)]
     for destination in (0, 1):
         in_context = context_mask(table, CONTEXTS[kind][destination])
         either |= in_context
-        ext = extension_mask(table, kind, destination, meta)
-        for mask, count in ((ext, config.panel_extension), (in_context & ~ext, config.panel_context_other)):
+        ext, other = exts[destination], exts[1 - destination]
+        for mask, count in ((ext & ~other, config.panel_extension),
+                            (in_context & ~ext & ~other, config.panel_context_other)):
             pool = table.index[mask]
-            parts.append(rng.choice(pool, size=count, replace=False))
+            pool = pool[~pool.isin(chosen)]
+            drawn = rng.choice(pool, size=count, replace=False)
+            chosen = chosen.append(pd.Index(drawn))
+            parts.append(drawn)
     parts.append(rng.choice(table.index[~either], size=config.panel_background, replace=False))
     ids = rng.permutation(np.concatenate(parts))
     return table.loc[ids]
@@ -190,6 +223,8 @@ def _shared(kind: str, i: int) -> dict:
 def _toward(kind: str, destination: int, meta: dict) -> list[dict]:
     """Distinguish the context, then reveal the pattern, then revisit it."""
     context = dict(CONTEXTS[kind][destination])
+    if kind == 'shared':
+        kind = SHARED_PATTERNS[destination]
     if kind == 'structural':
         patterns = [{**context, 'priority': 'URGENT'}]
     elif kind == 'distributional':
@@ -222,6 +257,26 @@ def make_trajectory(kind: str, active: int, condition: str, meta: dict) -> list[
         raise ValueError(f'Unknown condition {condition}')
     assert len(steps) == TRAJECTORY_LENGTH
     return steps
+
+
+def distinguishing_step(kind: str, condition: str, meta: dict) -> int | None:
+    """First step (1-based) whose query differs between the paired directions.
+
+    For switch it is the first such step after the switch, since earlier steps
+    distinguish the pre-switch destination. None if the pair never differs.
+    """
+    a, b = make_trajectory(kind, 0, condition, meta), make_trajectory(kind, 1, condition, meta)
+    start = SWITCH_STEP if condition == 'switch' else 0
+    for i in range(start, TRAJECTORY_LENGTH):
+        if a[i] != b[i]:
+            return i + 1
+    return None
+
+
+def context_ceiling(panel: pd.DataFrame, kind: str, destination: int, meta: dict) -> float:
+    """Expected precision of ranking the active context first in random order."""
+    in_context = context_mask(panel, CONTEXTS[kind][destination])
+    return float(extension_mask(panel, kind, destination, meta)[in_context].mean())
 
 
 def run_query(table: pd.DataFrame, query: dict, excluded: set, rng: np.random.Generator,
@@ -322,6 +377,128 @@ class PredicateMatch:
         return panel.loc[scores.sort_values(ascending=False, kind='stable').index[:k]]
 
 
+class ContextOracle:
+    """Reference that is told the active destination's context.
+
+    It ranks the in-context rows of the evaluation result first, in random
+    order, so its precision is the ceiling reachable by recognising the context
+    alone. Scoring above it requires recovering the pattern.
+    """
+
+    def __init__(self, session: 'Session', seed: int):
+        self.session, self.seed, self.step = session, seed, 0
+
+    def observe(self, rows, query):
+        self.step += 1
+
+    def rank(self, panel, k):
+        active = self.session.active[max(self.step - 1, 0)]
+        in_context = context_mask(panel, CONTEXTS[self.session.kind][active]).to_numpy()
+        noise = np.random.default_rng([self.seed, self.step]).random(len(panel))
+        order = np.lexsort((noise, ~in_context))
+        return panel.iloc[order[:k]]
+
+
+def _discretise(frames: list[pd.DataFrame], extra: pd.DataFrame) -> tuple[list[pd.DataFrame], pd.DataFrame]:
+    """Price bins at the quintiles of the first observed result, applied to history and candidates.
+
+    Edges come from the first (broadest) result rather than the pooled history:
+    equal-frequency bins over the pooled history would make its price
+    distribution uniform by construction and hide any concentration.
+    """
+    edges = np.unique(frames[0][NUMERIC].quantile([.2, .4, .6, .8]).to_numpy())
+    binned = lambda f: f[COLUMNS].assign(**{NUMERIC: np.searchsorted(edges, f[NUMERIC].to_numpy(), side='right')})
+    return [binned(f) for f in frames], binned(extra)
+
+
+class ValueProfile:
+    """History baseline: score = sum over attributes of the decayed session share of the row's value.
+
+    MDI's distributional component without its concentration weights.
+    """
+
+    def __init__(self, decay=.1):
+        self.decay = decay
+        self.results = []
+
+    def observe(self, rows, query):
+        self.results.append(rows)
+
+    def rank(self, panel, k):
+        if not self.results:
+            return panel.iloc[:k]
+        history, candidates = _discretise(self.results, panel)
+        n = len(history)
+        scores = np.zeros(len(panel))
+        for i, frame in enumerate(history):
+            w = np.exp(-self.decay * (n - 1 - i))
+            for column in COLUMNS:
+                share = frame[column].value_counts(normalize=True)
+                scores += w * candidates[column].map(share).fillna(0.).to_numpy()
+        order = np.argsort(-scores, kind='stable')
+        return panel.iloc[order[:k]]
+
+
+class CompetingModels:
+    """Bayesian model selection over hypotheses about which attributes drive exploration.
+
+    Adapted from Monadjemi et al.'s competing models for visual exploration. Each
+    hypothesis h is a set of at most two attributes (or none). Under h, the rows
+    of the next result follow the decayed history distribution of their values
+    on h (Dirichlet-smoothed) and are uniform on the other attributes. The
+    posterior over h is updated with the per-row mean log-likelihood of each
+    result given the earlier ones (each result counts as one observation).
+    Candidates are scored by the posterior-weighted predictive probability.
+    Reads results only, like MDI.
+    """
+
+    def __init__(self, decay=.9, smoothing=1., max_order=2):
+        from itertools import combinations
+        self.decay, self.smoothing = decay, smoothing
+        self.hypotheses = [()] + [h for r in range(1, max_order + 1) for h in combinations(COLUMNS, r)]
+        self.results = []
+
+    def observe(self, rows, query):
+        self.results.append(rows)
+
+    def _cardinality(self, column):
+        return 5 if column == NUMERIC else len(SCHEMA[column])
+
+    def rank(self, panel, k):
+        if not self.results:
+            return panel.iloc[:k]
+        history, candidates = _discretise(self.results, panel)
+        log_post = np.zeros(len(self.hypotheses))
+        counts = [Counter() for _ in self.hypotheses]
+        total = 0.
+
+        def log_predictive(j, frame):
+            h = self.hypotheses[j]
+            outside = sum(np.log(self._cardinality(c)) for c in COLUMNS if c not in h)
+            if not h:
+                return np.full(len(frame), -outside)
+            size = np.prod([self._cardinality(c) for c in h])
+            keys = list(zip(*(frame[c] for c in h)))
+            c = np.array([counts[j][key] for key in keys])
+            return np.log((c + self.smoothing) / (total + self.smoothing * size)) - outside
+
+        for frame in history:
+            if total > 0:
+                for j in range(len(self.hypotheses)):
+                    log_post[j] += log_predictive(j, frame).mean()
+            for j, h in enumerate(self.hypotheses):
+                for key in counts[j]:
+                    counts[j][key] *= self.decay
+                if h:
+                    counts[j].update(zip(*(frame[c] for c in h)))
+            total = total * self.decay + len(frame)
+        post = np.exp(log_post - log_post.max())
+        post /= post.sum()
+        scores = sum(post[j] * np.exp(log_predictive(j, candidates)) for j in range(len(self.hypotheses)))
+        order = np.argsort(-scores, kind='stable')
+        return panel.iloc[order[:k]]
+
+
 class RepositoryModel:
     """Adapter: observing a result is a recommendation call whose output is discarded."""
 
@@ -338,7 +515,7 @@ class RepositoryModel:
         return selected if selected is not None else panel.iloc[:0]
 
 
-def make_model(method: str, seed: int):
+def make_model(method: str, seed: int, session: Session | None = None):
     config = deepcopy(MDI_CONFIG)
     config['random'] = {'random_seed': seed}
     md = config['multidimensional_interestingness']
@@ -346,7 +523,15 @@ def make_model(method: str, seed: int):
         return Recurrence()
     if method == 'predicate_match':
         return PredicateMatch()
-    mdi_methods = ('mdi', 'mdi_original', 'association_only', 'mdi_with_delta', 'delta_only',
+    if method == 'context_oracle':
+        if session is None:
+            raise ValueError('The context oracle needs the session')
+        return ContextOracle(session, seed)
+    if method == 'value_profile':
+        return ValueProfile()
+    if method == 'competing_models':
+        return CompetingModels()
+    mdi_methods = ('mdi', 'mdi_original', 'association_only', 'mdi_no_novelty', 'mdi_with_delta', 'delta_only',
                    'mdi_reset', 'mdi_decay0', 'mdi_decay020')
     if method in mdi_methods:
         if method == 'mdi_original':
@@ -355,6 +540,8 @@ def make_model(method: str, seed: int):
             md = config['multidimensional_interestingness']
         if method == 'association_only':
             md.update(alpha=1., beta=0., gamma=0., delta_weight=0.)
+        if method == 'mdi_no_novelty':
+            md.update(alpha=.5, beta=.5, gamma=0.)
         if method == 'mdi_with_delta':
             md.update(alpha=.3, beta=.3, gamma=.1, delta_weight=.3)
         if method == 'delta_only':
@@ -393,10 +580,12 @@ def run_session(spec: tuple, methods=METHODS) -> list[dict]:
     session = make_session(seed, kind, condition, exposure, target)
     _, meta = _cached_table(seed, CONFIG)
     extensions = [set(session.panel.index[extension_mask(session.panel, kind, d, meta)]) for d in (0, 1)]
+    ceilings = [context_ceiling(session.panel, kind, d, meta) for d in (0, 1)]
+    q_dist = distinguishing_step(kind, condition, meta)
     records = []
     signal.signal(signal.SIGALRM, _alarm)
     for method in methods:
-        model = make_model(method, seed)
+        model = make_model(method, seed, session)
         failed = None
         method_started = time.time()
         for probe in range(TRAJECTORY_LENGTH + 1):
@@ -440,7 +629,8 @@ def run_session(spec: tuple, methods=METHODS) -> list[dict]:
                     selected_ids=[int(i) for i in selected.index[:k]],
                     precision=precision_at_budget(selected, session.panel, extensions[active], k),
                     other_precision=precision_at_budget(selected, session.panel, extensions[1 - active], k),
-                    chance=len(extensions[active]) / len(session.panel)))
+                    chance=len(extensions[active]) / len(session.panel),
+                    context_ceiling=ceilings[active], distinguishing_step=q_dist))
     return records
 
 
@@ -539,31 +729,57 @@ def summarize(output: Path, raw: list[dict]):
     curves = pd.DataFrame(curves)
     curves.to_csv(output / 'curves.csv', index=False)
 
-    # Paired earliness: a probe counts only if, for BOTH target directions on the
-    # same panel, precision is at least 2x chance and exceeds precision on the
-    # competing destination. History-free rankings and Null can never qualify.
+    # Paired earliness at two levels. A probe counts only if, for BOTH target
+    # directions on the same panel, precision exceeds precision on the competing
+    # destination and reaches a threshold:
+    #   context level: 2x chance (recognising the active context is enough);
+    #   pattern level: midway between the context ceiling and 1, which ranking
+    #   the active context first in random order cannot reach.
+    # History-free rankings and Null can never qualify. Lag is earliness minus
+    # the first step that distinguishes the pair (for switch, after the switch).
     primary = frame[frame.k == PRIMARY_K].copy()
-    primary['hit'] = (primary.precision >= 2 * primary.chance) & (primary.precision > primary.other_precision)
+    beats = primary.precision > primary.other_precision
+    primary['hit'] = (primary.precision >= 2 * primary.chance) & beats
+    if 'context_ceiling' in primary:
+        primary['pattern_hit'] = (primary.precision >= (primary.context_ceiling + 1) / 2) & beats
     paired = []
     for keys, group in primary.groupby(['seed'] + GROUP):
-        hits = group.groupby('probe').hit.all().sort_index().astype(float).tolist()
-        first = earliness(hits, 1.)
-        paired.append(dict(zip(['seed'] + GROUP, keys), earliness=first,
-                           steps_saved=max(0, TRAJECTORY_LENGTH - first)))
+        row = dict(zip(['seed'] + GROUP, keys))
+        q_dist = group.distinguishing_step.iloc[0] if 'distinguishing_step' in group else np.nan
+        for level, column in (('', 'hit'), ('pattern_', 'pattern_hit')):
+            if column not in group:
+                continue
+            hits = group.groupby('probe')[column].all().sort_index().astype(float).tolist()
+            first = earliness(hits, 1.)
+            row[level + 'earliness'] = first
+            row[level + 'qualified'] = float(first <= TRAJECTORY_LENGTH)
+            row[level + 'lag'] = first - q_dist if first <= TRAJECTORY_LENGTH and pd.notna(q_dist) else np.nan
+        row['steps_saved'] = max(0, TRAJECTORY_LENGTH - row['earliness'])
+        paired.append(row)
     per_seed_early = pd.DataFrame(paired)
+    per_seed_early.to_csv(output / 'earliness_per_seed.csv', index=False)
     early = []
     for keys, group in per_seed_early.groupby(GROUP):
-        e, er = mean_ci(group.earliness)
-        s, sr = mean_ci(group.steps_saved)
-        early.append(dict(zip(GROUP, keys), earliness=e, earliness_ci95=er, steps_saved=s,
-                          steps_saved_ci95=sr, n=len(group)))
+        row = dict(zip(GROUP, keys), n=len(group))
+        for column in ('earliness', 'steps_saved', 'pattern_earliness'):
+            if column in group:
+                row[column], row[column + '_ci95'] = mean_ci(group[column])
+        for level in ('', 'pattern_'):
+            if level + 'qualified' in group:
+                row[level + 'qualified'] = group[level + 'qualified'].mean()
+                lags = group[level + 'lag'].dropna()
+                row[level + 'lag'] = lags.mean() if len(lags) else np.nan
+        early.append(row)
     early = pd.DataFrame(early)
     early.to_csv(output / 'earliness.csv', index=False)
 
     pairs = []
     final = per_seed[(per_seed.probe == TRAJECTORY_LENGTH) & (per_seed.k == PRIMARY_K)]
-    for baseline in ('mdi_original', 'mdi_with_delta', 'association_only', 'mdi_reset', 'recurrence',
-                     'predicate_match', 'random'):
+    for baseline in ('mdi_original', 'mdi_with_delta', 'association_only', 'mdi_no_novelty', 'mdi_reset',
+                     'competing_models', 'value_profile', 'context_oracle', 'recurrence', 'predicate_match',
+                     'random'):
+        if baseline not in set(final.method):
+            continue
         joined = final[final.method == 'mdi'].merge(final[final.method == baseline],
                                                     on=['seed', 'kind', 'condition', 'exposure'],
                                                     suffixes=('_mdi', '_base'))
@@ -575,10 +791,21 @@ def summarize(output: Path, raw: list[dict]):
 
     write_tables(output, curves, early)
     write_figure(output, curves)
-    write_paper_artifacts(output, curves)
+    # The manuscript tables need every kind, condition and paper method; a
+    # subset run (for a quick check) still gets the full tables and curves above.
+    needed = set(PAPER_METHODS) | set(BASELINE_METHODS)
+    holdout = curves[curves.exposure == 'holdout']
+    if (set(KINDS) <= set(holdout.kind) and set(CONDITIONS) <= set(holdout.condition)
+            and needed <= set(holdout.method)):
+        write_paper_artifacts(output, curves)
+    else:
+        print('Subset run: skipped the manuscript tables (paper_table.tex, paper_baselines.tex, '
+              'paper_switch.pdf), which need all kinds, conditions and methods.')
 
 
 NAMES = {'mdi': 'MDI', 'mdi_original': 'Naive MDI', 'association_only': 'Association only',
+         'mdi_no_novelty': 'MDI, no novelty', 'competing_models': 'Competing Models',
+         'value_profile': 'Value profile', 'context_oracle': 'Context oracle',
          'mdi_with_delta': 'MDI + delta', 'delta_only': 'Delta only', 'mdi_reset': 'MDI, no history',
          'mdi_decay0': 'MDI, no decay', 'mdi_decay020': 'MDI, decay .2',
          'recurrence': 'Tuple recurrence', 'predicate_match': 'Predicate match (query-aware)',
@@ -662,14 +889,19 @@ def write_figure(output: Path, curves: pd.DataFrame, exposure='holdout'):
     handles, labels = axes[0][0].get_legend_handles_labels()
     fig.legend(handles, labels, loc='lower center', ncol=min(4, len(shown)), fontsize=6, frameon=False)
     fig.tight_layout(rect=(0, .08, 1, 1))
-    fig.savefig(output / 'recovery_curves.pdf')
+    fig.savefig(output / 'recovery_curves.pdf', metadata={'CreationDate': None})
     fig.savefig(output / 'recovery_curves.png', dpi=200)
     plt.close(fig)
 
 
-PAPER_METHODS = ('mdi', 'mdi_original', 'association_only', 'mdi_reset', 'predicate_match')
-BASELINE_METHODS = ('mdi', 'frequency', 'similarity', 'clustering', 'recurrence', 'random')
+PAPER_METHODS = ('mdi', 'mdi_original', 'association_only', 'mdi_no_novelty', 'mdi_reset', 'predicate_match')
+PAPER_KINDS = ('structural', 'distributional', 'compositional')  # Table 3; shared appears in Table 4
+BASELINE_METHODS = ('mdi', 'competing_models', 'value_profile', 'frequency', 'similarity', 'clustering',
+                    'recurrence', 'random', 'context_oracle')
+REFERENCE_METHODS = ('predicate_match', 'context_oracle')  # not ranked: query-aware or told the context
 PAPER_NAMES = {'mdi': 'MDI', 'mdi_original': 'Naive MDI', 'association_only': 'Association only',
+               'mdi_no_novelty': 'MDI, no novelty', 'competing_models': 'Competing Models',
+               'value_profile': 'Value profile', 'context_oracle': 'Context oracle$^{\\dagger}$',
                'mdi_reset': 'MDI, no history', 'predicate_match': 'Predicate match$^{*}$',
                'recurrence': 'Tuple recurrence', 'random': 'Random', 'frequency': 'Frequency',
                'similarity': 'Similarity', 'clustering': 'Clustering'}
@@ -689,15 +921,19 @@ def write_paper_artifacts(output: Path, curves: pd.DataFrame, exposure='holdout'
     final = curves[(curves.probe == TRAJECTORY_LENGTH) & (curves.k == PRIMARY_K) & (curves.exposure == exposure)]
     conditions = ('ambiguous', 'detour', 'switch')
     short = {'ambiguous': 'Amb', 'detour': 'Det', 'switch': 'Sw'}
-    lines = [r'\begin{tabular}{@{}l' + 'rrr' * len(KINDS) + '@{}}', r'\toprule',
-             ' & ' + ' & '.join(rf'\multicolumn{{3}}{{c}}{{{k.capitalize()}}}' for k in KINDS) + r' \\',
-             ''.join(rf'\cmidrule(lr){{{2 + 3 * i}-{4 + 3 * i}}}' for i in range(len(KINDS))),
-             'Method & ' + ' & '.join(short[c] for _ in KINDS for c in conditions) + r' \\', r'\midrule']
-    values = {m: [round(float(final[(final.method == m) & (final.kind == k) & (final.condition == c)]
-                                  .precision.iloc[0]), 2) for k in KINDS for c in conditions] for m in PAPER_METHODS}
-    # The query-aware reference is not a result-only method, so it is excluded from bolding.
-    contenders = [m for m in PAPER_METHODS if m != 'predicate_match']
-    best = [max(values[m][j] for m in contenders) for j in range(len(KINDS) * len(conditions))]
+    kinds = PAPER_KINDS
+    lines = [r'\begin{tabular}{@{}l' + 'rrr' * len(kinds) + '@{}}', r'\toprule',
+             ' & ' + ' & '.join(rf'\multicolumn{{3}}{{c}}{{{k.capitalize()}}}' for k in kinds) + r' \\',
+             ''.join(rf'\cmidrule(lr){{{2 + 3 * i}-{4 + 3 * i}}}' for i in range(len(kinds))),
+             'Method & ' + ' & '.join(short[c] for _ in kinds for c in conditions) + r' \\', r'\midrule']
+    cell = lambda m, k, c: final[(final.method == m) & (final.kind == k) & (final.condition == c)]
+    values = {m: [round(float(cell(m, k, c).precision.iloc[0]), 2) for k in kinds for c in conditions]
+              for m in PAPER_METHODS}
+    max_ci = max(float(cell(m, k, c).ci95.iloc[0]) for m in PAPER_METHODS for k in kinds for c in conditions)
+    (output / 'paper_table_max_ci.txt').write_text(f'{max_ci:.3f}\n')
+    # References (query-aware or told the context) are excluded from bolding.
+    contenders = [m for m in PAPER_METHODS if m not in REFERENCE_METHODS]
+    best = [max(values[m][j] for m in contenders) for j in range(len(kinds) * len(conditions))]
     for method in PAPER_METHODS:
         cells = [bold_if(fmt_precision(v), v == b and method in contenders) for v, b in zip(values[method], best)]
         lines.append(PAPER_NAMES[method] + ' & ' + ' & '.join(cells) + r' \\')
@@ -709,11 +945,11 @@ def write_paper_artifacts(output: Path, curves: pd.DataFrame, exposure='holdout'
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     data = curves[(curves.k == PRIMARY_K) & (curves.exposure == exposure) & (curves.condition == 'switch')]
-    shown = ('mdi', 'mdi_original', 'association_only', 'mdi_reset', 'predicate_match')
+    shown = ('mdi', 'mdi_original', 'association_only', 'competing_models', 'predicate_match')
     palette = ['#0072B2', '#E69F00', '#009E73', '#D55E00', '#CC79A7']
     markers = ['o', 's', '^', 'v', 'D']
     styles = ['-', '--', '-.', ':', '-']
-    fig, axes = plt.subplots(1, len(KINDS), figsize=(3.4, 1.45), sharey=True)
+    fig, axes = plt.subplots(1, len(KINDS), figsize=(3.4, 1.55), sharey=True)
     for ax, kind in zip(axes, KINDS):
         for i, method in enumerate(shown):
             rows = data[(data.kind == kind) & (data.method == method)].sort_values('probe')
@@ -731,28 +967,53 @@ def write_paper_artifacts(output: Path, curves: pd.DataFrame, exposure='holdout'
     fig.legend(handles, labels, loc='lower center', ncol=3, fontsize=5, frameon=False, handlelength=2.2,
                columnspacing=1)
     fig.tight_layout(rect=(0, .2, 1, 1), pad=.2, w_pad=.4)
-    fig.savefig(output / 'paper_switch.pdf')
+    fig.savefig(output / 'paper_switch.pdf', metadata={'CreationDate': None})
     plt.close(fig)
 
 
 def write_baseline_table(output: Path, curves: pd.DataFrame, early_path: Path, exposure='holdout'):
-    """MDI against standard recommenders: clear-trajectory P@10 per kind and paired earliness."""
+    """Clear trajectories: P@10 per kind, and pattern-level recovery against history baselines.
+
+    Rec.: share of (kind, seed) pairs in which paired pattern-level earliness
+    is reached. Lag: mean, over those pairs, of pattern earliness minus the
+    distinguishing step. Bold marks every ranked method within the 95%
+    interval (over seeds) of the best ranked value, so ties within noise are
+    not presented as wins.
+    """
     final = curves[(curves.probe == TRAJECTORY_LENGTH) & (curves.k == PRIMARY_K) & (curves.exposure == exposure)
                    & (curves.condition == 'clear')]
-    early = pd.read_csv(early_path)
-    early = early[(early.exposure == exposure) & (early.condition == 'clear')]
-    lines = [r'\begin{tabular}{@{}lrrrr@{}}', r'\toprule',
-             r' & \multicolumn{3}{c}{P@10} & \\', r'\cmidrule(lr){2-4}',
-             r'Method & Str & Dist & Comp & Earliness \\', r'\midrule']
-    precision = {m: [round(float(final[(final.method == m) & (final.kind == k)].precision.iloc[0]), 2) for k in KINDS]
-                 for m in BASELINE_METHODS}
-    earliness = {m: round(float(early[early.method == m].earliness.mean()), 1) for m in BASELINE_METHODS}
-    best = [max(precision[m][j] for m in BASELINE_METHODS) for j in range(len(KINDS))]
-    earliest = min(earliness.values())  # lower is better
-    for method in BASELINE_METHODS:
-        cells = [bold_if(fmt_precision(v), v == b) for v, b in zip(precision[method], best)]
-        e = earliness[method]
-        cells.append('never' if e >= TRAJECTORY_LENGTH + 1 else bold_if(f'{e:.1f}', e == earliest))
+    per_seed = pd.read_csv(output / 'earliness_per_seed.csv')
+    per_seed = per_seed[(per_seed.exposure == exposure) & (per_seed.condition == 'clear')]
+    short = {'structural': 'Str', 'distributional': 'Dist', 'compositional': 'Comp', 'shared': 'Shr'}
+    lines = [r'\begin{tabular}{@{}l' + 'r' * (len(KINDS) + 2) + '@{}}', r'\toprule',
+             rf' & \multicolumn{{{len(KINDS)}}}{{c}}{{P@10}} & \multicolumn{{2}}{{c}}{{Pattern}} \\',
+             rf'\cmidrule(lr){{2-{len(KINDS) + 1}}}\cmidrule(l){{{len(KINDS) + 2}-{len(KINDS) + 3}}}',
+             'Method & ' + ' & '.join(short[k] for k in KINDS) + r' & Rec. & Lag \\', r'\midrule']
+    methods = [m for m in BASELINE_METHODS + ('predicate_match',) if m in set(final.method)]
+    methods = [m for m in methods if m not in REFERENCE_METHODS] + [m for m in methods if m in REFERENCE_METHODS]
+    cell = lambda m, k: final[(final.method == m) & (final.kind == k)].iloc[0]
+    precision = {m: [round(float(cell(m, k).precision), 2) for k in KINDS] for m in methods}
+    recovery, recovery_ci, lag = {}, {}, {}
+    for m in methods:
+        rows = per_seed[per_seed.method == m]
+        rate, radius = mean_ci(rows.groupby('seed').pattern_qualified.mean())
+        recovery[m], recovery_ci[m] = round(rate * 100), radius * 100
+        lags = rows.pattern_lag.dropna()
+        lag[m] = round(float(lags.mean()), 1) if len(lags) else np.nan
+    contenders = [m for m in methods if m not in REFERENCE_METHODS]
+    best_by_kind = [max(contenders, key=lambda m: precision[m][j]) for j in range(len(KINDS))]
+    floor = [precision[b][j] - float(cell(b, KINDS[j]).ci95) for j, b in enumerate(best_by_kind)]
+    best_recovery = max(contenders, key=lambda m: recovery[m])
+    recovery_floor = recovery[best_recovery] - recovery_ci[best_recovery]
+    first_reference = True
+    for method in methods:
+        ranked = method in contenders
+        if not ranked and first_reference:
+            lines.append(r'\midrule')
+            first_reference = False
+        cells = [bold_if(fmt_precision(v), ranked and v >= f - 1e-9) for v, f in zip(precision[method], floor)]
+        cells.append(bold_if(f'{recovery[method]}\\%', ranked and recovery[method] >= recovery_floor - 1e-9))
+        cells.append('--' if np.isnan(lag[method]) else f'{lag[method]:.1f}')
         lines.append(PAPER_NAMES[method] + ' & ' + ' & '.join(cells) + r' \\')
     lines += [r'\bottomrule', r'\end{tabular}']
     (output / 'paper_baselines.tex').write_text('\n'.join(lines) + '\n')
@@ -772,7 +1033,14 @@ def main():
     args = parser.parse_args()
     logging.basicConfig(level=logging.ERROR)
     if args.resummarize:
-        summarize(args.output, json.loads((args.output / 'predictions.json').read_text()))
+        plain, packed = args.output / 'predictions.json', args.output / 'predictions.json.gz'
+        if plain.exists():
+            raw = json.loads(plain.read_text())
+        else:
+            import gzip
+            with gzip.open(packed, 'rt') as f:
+                raw = json.load(f)
+        summarize(args.output, raw)
         return
     if os.environ.get('PYTHONHASHSEED') != '0':
         print('WARNING: set PYTHONHASHSEED=0; association-rule ordering (and so tie-breaking) '
