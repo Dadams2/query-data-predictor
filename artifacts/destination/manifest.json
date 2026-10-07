@@ -16,11 +16,15 @@
     "mdi",
     "mdi_original",
     "association_only",
+    "mdi_no_novelty",
     "mdi_with_delta",
     "delta_only",
     "mdi_reset",
     "mdi_decay0",
     "mdi_decay020",
+    "competing_models",
+    "value_profile",
+    "context_oracle",
     "recurrence",
     "predicate_match",
     "frequency",
@@ -31,7 +35,8 @@
   "kinds": [
     "structural",
     "distributional",
-    "compositional"
+    "compositional",
+    "shared"
   ],
   "conditions": [
     "clear",
@@ -53,6 +58,8 @@
     "tail_multiplier": 4.0,
     "tail_quantile": 0.99,
     "compositional_confidence": 0.9,
+    "shared_urgent_fraction": 0.45,
+    "shared_tail_fraction": 0.3,
     "query_limit": 200,
     "panel_extension": 15,
     "panel_context_other": 10,
@@ -203,6 +210,16 @@
         "region": "AMERICA",
         "category": "TECHNOLOGY"
       }
+    ],
+    "shared": [
+      {
+        "region": "MIDDLE_EAST",
+        "category": "FINANCE"
+      },
+      {
+        "region": "MIDDLE_EAST",
+        "category": "FINANCE"
+      }
     ]
   },
   "trajectory_length": 8,
@@ -216,48 +233,48 @@
   ],
   "tables": {
     "100": {
-      "sha256": "e7db305f60637171272392a746650dd3e5fa4e8007d0df3de45adccac5c882fa",
-      "tail_threshold": 123.41879999999998
+      "sha256": "1b29a7b5f2ac5211abe8c72259190ae77056a2d1f4a0ba115805cd50d38d951e",
+      "tail_threshold": 123.20120000000001
     },
     "101": {
-      "sha256": "6823142f11c68fadc051a7701f928436d7681ddf1054c024e0bc264584b1eacd",
-      "tail_threshold": 123.00579999999974
+      "sha256": "6f903a243bc300d2d41807afb3a4046a827a96a5af8481f8bcb5b7dad036892f",
+      "tail_threshold": 122.90319999999996
     },
     "102": {
-      "sha256": "a026c1adbd99ff17a3b6025318b95dce89dbda725b4740a9ae30e62079a3e2c5",
-      "tail_threshold": 123.79720000000009
+      "sha256": "0006f930b07e1a8e2ac3f0d691de9b05b92da52151a70e1de92804dbf2e4fc5f",
+      "tail_threshold": 123.955
     },
     "103": {
-      "sha256": "f1376e3ab8e0361ff92b41215bba2042d3037d141af56f75d1b5957042f18181",
-      "tail_threshold": 123.1646
+      "sha256": "c3298d0abdc9573594b3e3bdc75aa68a0eb15ded4235ebcd766095ee8565a20c",
+      "tail_threshold": 123.17900000000003
     },
     "104": {
-      "sha256": "3ce462f89287d70dbaf08e24b020cbe22403aab6b8658051e0cade8d1bbdabbe",
-      "tail_threshold": 124.48749999999986
+      "sha256": "8732f4f3ba57ffca635b22fb01d64f2621323b52d95367e4e0771200944bfb64",
+      "tail_threshold": 124.70570000000002
     },
     "105": {
-      "sha256": "157579157c3b94fddaab76a6b757d580c25305a9ee230527286bc966f034a509",
-      "tail_threshold": 123.65400000000001
+      "sha256": "0d500e498cd186d4c7ab3b64ce5e9ddee205e3c8b96c2841773448ed455f5e4f",
+      "tail_threshold": 123.49420000000009
     },
     "106": {
-      "sha256": "707ae9160bba83da2df9c0ebdab7027446f3f82d9a8719004afd824fa7dbe763",
-      "tail_threshold": 123.02080000000001
+      "sha256": "df4bc8a1f93eef56151443bc9d35b99bc2645122b24135718d107208073a4af5",
+      "tail_threshold": 123.24
     },
     "107": {
-      "sha256": "b48b6c4770ca04338079c3efbdc1c3b86624183de71503608250ae9b0d35a230",
-      "tail_threshold": 122.39949999999997
+      "sha256": "7e97392d3385441e91095e07cdf3136f76d1f76c8f04ba657ff679d165b19fe6",
+      "tail_threshold": 122.13400000000011
     },
     "108": {
-      "sha256": "a9cc403595b5845a55cb362556c087060cd5b1821d647ce41aed844a84ae464c",
-      "tail_threshold": 122.87719999999958
+      "sha256": "3e3fa80dd19bde513bd15c2d9d22e9df97df51a4dee52a050b046181b6a8125f",
+      "tail_threshold": 122.3131
     },
     "109": {
-      "sha256": "2335dc5886b5757a220b317b727cb06df70bc4d0c88e1b254bd1def1d153a4a1",
-      "tail_threshold": 123.40550000000002
+      "sha256": "156be98fbdebef8b0c7c8fde7ad62e79368c093b60864c083d3d0963a736d471",
+      "tail_threshold": 123.38699999999997
     }
   },
-  "source_sha256": "6dd53c1093cffe18d042bde8c90b37f07bbced9f9c93a633a9ce2c475f2fab57",
-  "seconds": 5674.770321130753,
+  "source_sha256": "306978633d17808a733bd72e7efedb4bbd0a1ed41dbdeeccaca05831b4991ed8",
+  "seconds": 240.69279408454895,
   "failures": 0,
   "python": "3.10.18 (main, Oct  7 2025, 15:51:21) [Clang 20.1.4 ]",
   "numpy": "2.2.5",
