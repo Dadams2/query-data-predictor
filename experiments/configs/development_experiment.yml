@@ -55,7 +55,8 @@ evaluation:
   column_weights: null  # Custom weights for columns, null for equal weights
 
 recommendation:
-  mode: 'cheating'
+  mode: 'top_k'
+  top_k: 10
 
 clustering:
   n_clusters: null  # Number of clusters, null for auto-determination

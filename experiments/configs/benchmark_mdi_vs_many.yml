@@ -13,7 +13,7 @@ experiment:
   - clustering
   - sampling
   - frequency
-  mode: cheating
+  mode: normal
   include_query_text: false
   dataset: benchmark_mdi
   store_intermediate_states: false

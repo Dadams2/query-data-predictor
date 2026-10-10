@@ -26,7 +26,7 @@ experiment:
     - frequency
     - similarity
     - sampling
-  mode: "cheating"
+  mode: "normal"
   include_query_text: false
   dataset: simba_drilldown
   store_intermediate_states: false

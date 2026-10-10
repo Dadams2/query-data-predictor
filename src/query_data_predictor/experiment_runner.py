@@ -201,8 +201,14 @@ class ExperimentRunner:
             "novel_count": 0,
             "ndcg": 0.0,
         }
-        # if reccomendation mode is cheating set topk to be length of future results otherwise let reccomenders determine   
-        top_k = len(future_results) if self.config.get('experiment', {}).get('mode', '') == 'cheating' else None
+        # 'cheating' sizes the recommendation from the future result, which is not
+        # available at prediction time; it is kept only to reproduce the legacy
+        # protocol and is labelled in every record. Otherwise recommenders use the
+        # configured budget.
+        cheating = self.config.get('experiment', {}).get('mode', '') == 'cheating'
+        top_k = len(future_results) if cheating else None
+        result_record["budget_protocol"] = "legacy_future_size" if cheating else "configured"
+        result_record["requested_k"] = top_k
         # TODO this should probably go somewhere else
         try:
             timeout_seconds = 30 if len(current_results) < 100 else 120

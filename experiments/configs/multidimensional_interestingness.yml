@@ -21,7 +21,7 @@ experiment:
   name: "multidimensional_interestingness_test"
   recommenders:
     - multidimensional_interestingness
-  mode: "normal"  # or "cheating" to match future result size
+  mode: "normal"
   include_query_text: false
   dataset: sdss
   store_intermediate_states: false

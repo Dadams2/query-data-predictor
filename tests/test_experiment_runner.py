@@ -124,3 +124,25 @@ def test_get_results_does_not_pass_future_query_to_recommender(tmp_path):
     kwargs = recommender.recommend_tuples.call_args.kwargs
     assert kwargs["current_query_text"] == "SELECT current"
     assert "future_query_text" not in kwargs
+
+
+def test_get_results_labels_budget_protocol(tmp_path):
+    runner = ExperimentRunner.__new__(ExperimentRunner)
+    runner.metrics = __import__(
+        "query_data_predictor.metrics", fromlist=["EvaluationMetrics"]
+    ).EvaluationMetrics()
+    recommender = MagicMock()
+    recommender.recommend_tuples.return_value = pd.DataFrame({"a": [1]})
+    current = pd.DataFrame({"a": [1, 2, 3]})
+    future = pd.DataFrame({"a": [1, 2]})
+
+    runner.config = {"experiment": {"mode": "normal"}}
+    result = runner.get_results("s", 0, 1, current, future, "q0", "q1", "mock", recommender, 1)
+    assert result["budget_protocol"] == "configured"
+    assert result["requested_k"] is None
+    assert recommender.recommend_tuples.call_args.kwargs["top_k"] is None
+
+    runner.config = {"experiment": {"mode": "cheating"}}
+    result = runner.get_results("s", 0, 1, current, future, "q0", "q1", "mock", recommender, 1)
+    assert result["budget_protocol"] == "legacy_future_size"
+    assert result["requested_k"] == 2

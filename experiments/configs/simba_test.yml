@@ -24,7 +24,7 @@ experiment:
     - random 
     - clustering
     - sampling
-  mode: "normal"  # or "cheating" to match future result size
+  mode: "normal"
   include_query_text: false
   dataset: simba_complex
   store_intermediate_states: false

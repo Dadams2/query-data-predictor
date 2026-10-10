@@ -25,7 +25,7 @@ experiment:
     - clustering
     - interestingness
     - sampling
-  mode: "normal"  # or "cheating" to match future result size
+  mode: "normal"
   include_query_text: false
   dataset: sdss
   store_intermediate_states: false

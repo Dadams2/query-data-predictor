@@ -23,7 +23,7 @@ experiment:
     - frequency
     - similarity
     - sampling
-  mode: "cheating"
+  mode: "normal"
   include_query_text: false
   dataset: sdss
   store_intermediate_states: false
