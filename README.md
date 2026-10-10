@@ -236,7 +236,9 @@ That sweep is also multi-hour and regenerates the supplementary
 anticipate where an exploration trajectory is heading, using planted
 destinations in a generated table. It needs no database. The submitted
 artifact, with the full results and reproduction instructions, is the
-`edbt2027-submission` tag (branch `EDBT_2027`). To rerun the reported seeds:
+`edbt2027-submission` tag (branch `EDBT_2027`). Why its MDI settings differ
+from the original model is recorded in `docs/mdi-design-decisions.md`. To
+rerun the reported seeds:
 
 ```bash
 PYTHONHASHSEED=0 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/mpl \
