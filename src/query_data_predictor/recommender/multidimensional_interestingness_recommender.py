@@ -95,6 +95,22 @@ class MultiDimensionalInterestingnessRecommender(BaseRecommender):
         self.lambda_r = md_config.get('rule_decay_rate', 0.1)      # Rule decay rate
         self.lambda_s = md_config.get('summary_decay_rate', 0.1)   # Summary decay rate
         
+        # Revised scoring (defaults reproduce the original model).
+        # normalize_components: rank-normalise each component before weighting,
+        #   so uncalibrated scales cannot let one component dominate.
+        # diversity_mode: 'summary' (original) or 'attribute', which weights each
+        #   attribute by how concentrated its session distribution has become.
+        # delta_weight: weight of the result-delta signal, which accumulates
+        #   attribute values that become more prevalent on narrowing steps.
+        self.normalize_components = md_config.get('normalize_components', False)
+        self.diversity_mode = md_config.get('diversity_mode', 'summary')
+        self.delta = md_config.get('delta_weight', 0.0)
+        self.lambda_d = md_config.get('delta_decay_rate', self.lambda_s)
+        self.narrowing_margin = md_config.get('narrowing_margin', 0.05)
+        self._value_count_history = []  # List of (timestamp, {attr: Counter})
+        self._delta_history = []        # List of (timestamp, {(attr, value): increment})
+        self._last_distribution = None
+
         # Other parameters
         self.min_support = config.get('association_rules', {}).get('min_support', 0.1)
         self.min_confidence = config.get('association_rules', {}).get('min_threshold', 0.5)
@@ -134,7 +150,9 @@ class MultiDimensionalInterestingnessRecommender(BaseRecommender):
         
         # Preprocess (discretize) data
         processed_df = self._preprocess_data(current_results)
-        
+        if self.diversity_mode == 'attribute' or self.delta > 0:
+            self._update_distribution_history(processed_df, current_timestamp)
+
         # Mine frequent itemsets (with caching)
         frequent_itemsets, encoded_df, attributes = self._compute_frequent_itemsets(processed_df)
         
@@ -385,29 +403,127 @@ class MultiDimensionalInterestingnessRecommender(BaseRecommender):
         """
         n_tuples = len(encoded_df)
         scores = pd.Series(0.0, index=encoded_df.index)
-        
+        scale = self._rank_normalise if self.normalize_components else (lambda s: s)
+
         # Component 1: Association rule contribution with temporal decay
         if self.alpha > 0 and not association_rules.empty:
             rule_scores = self._compute_association_component(
                 encoded_df, association_rules, current_timestamp
             )
-            scores += self.alpha * rule_scores
+            scores += self.alpha * scale(rule_scores)
             logger.debug(f"Association component: mean={rule_scores.mean():.4f}, max={rule_scores.max():.4f}")
-        
-        # Component 2: Summary diversity contribution with temporal decay
-        if self.beta > 0 and summaries:
+
+        # Component 2: Diversity contribution with temporal decay
+        if self.beta > 0 and self.diversity_mode == 'attribute':
+            summary_scores = self._compute_attribute_diversity_component(processed_df, current_timestamp)
+            scores += self.beta * scale(summary_scores)
+        elif self.beta > 0 and summaries:
             summary_scores = self._compute_summary_component(
                 encoded_df, summaries, current_timestamp
             )
-            scores += self.beta * summary_scores
+            scores += self.beta * scale(summary_scores)
             logger.debug(f"Summary component: mean={summary_scores.mean():.4f}, max={summary_scores.max():.4f}")
-        
+
         # Component 3: Novelty contribution
         if self.gamma > 0:
             novelty_scores = self._compute_novelty_component(original_df)
-            scores += self.gamma * novelty_scores
+            scores += self.gamma * scale(novelty_scores)
             logger.debug(f"Novelty component: mean={novelty_scores.mean():.4f}, max={novelty_scores.max():.4f}")
-        
+
+        # Component 4: Result-delta (trajectory direction) contribution
+        if self.delta > 0:
+            delta_scores = self._compute_delta_component(processed_df, current_timestamp)
+            scores += self.delta * scale(delta_scores)
+
+        return scores
+
+    @staticmethod
+    def _rank_normalise(values: pd.Series) -> pd.Series:
+        """Map scores to [0, 1] by average rank; a constant component contributes 0."""
+        if values.nunique() <= 1:
+            return pd.Series(0.0, index=values.index)
+        ranks = values.rank(method='average')
+        return (ranks - ranks.min()) / (ranks.max() - ranks.min())
+
+    @staticmethod
+    def _distribution(df: pd.DataFrame) -> Dict[str, Counter]:
+        return {col: Counter(df[col].astype(str)) for col in df.columns}
+
+    @staticmethod
+    def _normalised_entropy(counts: Counter) -> float:
+        total = sum(counts.values())
+        if total == 0 or len(counts) <= 1:
+            return 0.0
+        p = np.array(list(counts.values()), dtype=float) / total
+        return float(-(p * np.log(p)).sum() / np.log(len(counts)))
+
+    def _update_distribution_history(self, processed_df: pd.DataFrame, timestamp: int):
+        """Record value counts and, for narrowing steps, which values gained prevalence."""
+        current = self._distribution(processed_df)
+        self._value_count_history.append((timestamp, current))
+        previous = self._last_distribution
+        if previous is not None:
+            increments = {}
+            for col, counts in current.items():
+                before = previous.get(col)
+                if not before:
+                    continue
+                # Only attributes the step narrowed carry direction; broadening
+                # steps (such as returning to a wide result) are ignored.
+                if self._normalised_entropy(before) - self._normalised_entropy(counts) < self.narrowing_margin:
+                    continue
+                n_now, n_before = sum(counts.values()), sum(before.values())
+                eps = 1.0 / (n_now + n_before)
+                for value, count in counts.items():
+                    gain = np.log((count / n_now + eps) / (before.get(value, 0) / n_before + eps))
+                    if gain > 0:
+                        increments[(col, value)] = float(gain)
+            if increments:
+                self._delta_history.append((timestamp, increments))
+        self._last_distribution = current
+
+    def _compute_delta_component(self, processed_df: pd.DataFrame, current_timestamp: int) -> pd.Series:
+        weights = defaultdict(float)
+        for timestamp, increments in self._delta_history:
+            w = np.exp(-self.lambda_d * (current_timestamp - timestamp))
+            for key, gain in increments.items():
+                weights[key] += w * gain
+        scores = pd.Series(0.0, index=processed_df.index)
+        for col in processed_df.columns:
+            values = processed_df[col].astype(str)
+            scores += values.map(lambda v: weights.get((col, v), 0.0)).to_numpy()
+        return scores
+
+    def _compute_attribute_diversity_component(self, processed_df: pd.DataFrame,
+                                               current_timestamp: int) -> pd.Series:
+        """Σ_a w_a · P_a(value(t, a)), where P_a is the decayed session distribution
+        of attribute a and w_a combines the diversity measures as concentration
+        (low Shannon evenness, high Simpson/Gini/Berger-Parker dominance)."""
+        decayed = defaultdict(lambda: defaultdict(float))
+        for timestamp, distribution in self._value_count_history:
+            w = np.exp(-self.lambda_s * (current_timestamp - timestamp))
+            for col, counts in distribution.items():
+                total = sum(counts.values())
+                for value, count in counts.items():
+                    decayed[col][value] += w * count / total
+        scores = pd.Series(0.0, index=processed_df.index)
+        for col in processed_df.columns:
+            dist = decayed.get(col)
+            if not dist:
+                continue
+            values = np.array(list(dist.values()))
+            p = values / values.sum()
+            evenness = self._normalised_entropy(Counter(dict(zip(dist, values))))
+            simpson = float((p ** 2).sum())
+            berger = float(p.max())
+            sorted_p = np.sort(p)
+            n = len(p)
+            gini = float((2 * np.arange(1, n + 1) - n - 1).dot(sorted_p) / (n * sorted_p.sum())) if n > 1 else 0.0
+            mcintosh = float((1 - np.sqrt(simpson)) / (1 - 1 / np.sqrt(n))) if n > 1 else 0.0
+            concentration = (self.mu_1 * (1 - evenness) + self.mu_2 * simpson + self.mu_3 * gini
+                             + self.mu_4 * berger + self.mu_5 * (1 - mcintosh))
+            share = {value: float(v) for value, v in zip(dist, p)}
+            scores += concentration * processed_df[col].astype(str).map(lambda v: share.get(v, 0.0)).to_numpy()
         return scores
     
     def _compute_association_component(self, encoded_df: pd.DataFrame, 
@@ -551,10 +667,13 @@ class MultiDimensionalInterestingnessRecommender(BaseRecommender):
     
     def _compute_novelty_component(self, original_df: pd.DataFrame) -> pd.Series:
         """
-        Compute novelty component: Novelty(t) = Σ(1 / log(1 + freq(a, value(t, a))))
+        Compute novelty component: Novelty(t) = Σ(1 / log(2 + freq(a, value(t, a))))
         
         Novelty measures the inverse frequency of attribute-value combinations,
         promoting discovery of rare but potentially significant data patterns.
+        The +2 keeps the score finite and monotone: an unseen value (freq 0)
+        scores highest. (The earlier 1/log(1 + freq), with 1.0 for unseen
+        values, ranked values seen once above unseen ones.)
         """
         scores = pd.Series(0.0, index=original_df.index)
         
@@ -567,12 +686,8 @@ class MultiDimensionalInterestingnessRecommender(BaseRecommender):
                 # Get frequency of this attribute-value combination
                 freq = self._attribute_value_frequencies[attr][value]
                 
-                # Compute inverse frequency (with log smoothing)
-                if freq > 0:
-                    novelty_score += 1.0 / np.log(1 + freq)
-                else:
-                    # New unseen combination - maximum novelty
-                    novelty_score += 1.0
+                # Inverse frequency with log smoothing; unseen values score highest.
+                novelty_score += 1.0 / np.log(2 + freq)
             
             scores[idx] = novelty_score
         
@@ -676,6 +791,9 @@ class MultiDimensionalInterestingnessRecommender(BaseRecommender):
         self._rule_history.clear()
         self._summary_history.clear()
         self._attribute_value_frequencies.clear()
+        self._value_count_history.clear()
+        self._delta_history.clear()
+        self._last_distribution = None
         self._session_counter = 0
         logger.info("Cleared all historical memory")
     

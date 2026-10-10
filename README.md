@@ -230,6 +230,29 @@ bash run_decay_sweep.sh
 That sweep is also multi-hour and regenerates the supplementary
 `decay_sensitivity.pdf` figure.
 
+## Destination-Recovery Benchmark (EDBT 2027 vision paper)
+
+`src/query_data_predictor/destination_benchmark.py` tests whether a scorer can
+anticipate where an exploration trajectory is heading, using planted
+destinations in a generated table. It needs no database. The submitted
+artifact, with the full results and reproduction instructions, is the
+`edbt2027-submission` tag (branch `EDBT_2027`). To rerun the reported seeds:
+
+```bash
+PYTHONHASHSEED=0 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/mpl \
+  .venv/bin/python -m query_data_predictor.destination_benchmark \
+  --output artifacts/destination-rerun --seeds 100 101 102 103 104 105 106 107 108 109
+```
+
+`tools/sdss_characterise.py` reproduces the SkyServer log characterisation from
+`data/skyserver_sessions.csv.gz`, a query-only extract of the 462 sessions.
+Download it first:
+
+```bash
+bash scripts/download_skyserver_extract.sh
+.venv/bin/python tools/sdss_characterise.py --output artifacts/sdss-characterisation
+```
+
 ## Data Used
 
 The repository tracks workload queries rather than query results:
